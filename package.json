@@ -1,0 +1,29 @@
+{
+  "name": "clide",
+  "private": true,
+  "workspaces": [
+    "packages/worker",
+    "packages/web"
+  ],
+  "scripts": {
+    "dev:worker": "npm run dev --workspace @clide/worker",
+    "dev:web": "npm run dev --workspace @clide/web",
+    "build:worker": "npm run build --workspace @clide/worker",
+    "build:web": "npm run build --workspace @clide/web",
+    "deploy:worker": "npm run deploy --workspace @clide/worker",
+    "deploy:web": "npm run deploy --workspace @clide/web",
+    "db:migrate": "npm run db:migrate --workspace @clide/worker",
+    "db:migrate:remote": "npm run db:migrate:remote --workspace @clide/worker",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "overrides": {
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.75.0"
+  }
+}

@@ -1,0 +1,77 @@
+name = "clide-worker"
+main = "src/index.ts"
+compatibility_date = "2024-10-22"
+compatibility_flags = ["nodejs_compat"]
+
+# ── D1 Database ──
+[[d1_databases]]
+binding = "DB"
+database_name = "clide-db"
+database_id = "084f4ce3-4405-44ec-a0cf-ae93d75c1d3b"
+
+# ── KV Namespace ──
+[[kv_namespaces]]
+binding = "KV"
+id = "01cba72963644221bc6f7dd4250aa67c"
+preview_id = "3238b387b6894d4c8cccf95ccc0214cd"
+
+# ── R2 Bucket ──
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "clide-uploads"
+
+# ── Queues (Producers) ──
+[[queues.producers]]
+queue = "clide-csv-processing"
+binding = "CSV_QUEUE"
+
+[[queues.producers]]
+queue = "clide-sms-dispatch"
+binding = "SMS_QUEUE"
+
+[[queues.producers]]
+queue = "clide-trigger-execution"
+binding = "TRIGGER_QUEUE"
+
+# ── Queues (Consumers) ──
+[[queues.consumers]]
+queue = "clide-csv-processing"
+max_batch_size = 10
+max_batch_timeout = 30
+max_retries = 3
+dead_letter_queue = "clide-dlq"
+
+[[queues.consumers]]
+queue = "clide-sms-dispatch"
+max_batch_size = 50
+max_batch_timeout = 10
+max_retries = 3
+dead_letter_queue = "clide-dlq"
+
+[[queues.consumers]]
+queue = "clide-trigger-execution"
+max_batch_size = 20
+max_batch_timeout = 15
+max_retries = 3
+dead_letter_queue = "clide-dlq"
+
+# ── Cron Triggers ──
+[triggers]
+crons = [
+  "*/5 * * * *",  # Campaign lifecycle check (every 5 min)
+  "*/2 * * * *",  # Trigger scheduler (every 2 min)
+  "*/10 * * * *"  # SMS retry (every 10 min)
+]
+
+# ── Environment Variables ──
+[vars]
+ENVIRONMENT = "development"
+SHORT_DOMAIN = "http://localhost:8787"
+FRONTEND_URL = "http://localhost:3000"
+ALLOWED_DOMAIN = "commercium.africa"
+
+# Secrets (set via wrangler secret put):
+# GOOGLE_CLIENT_ID
+# GOOGLE_CLIENT_SECRET
+# SESSION_SECRET
+# WEBHOOK_SECRET

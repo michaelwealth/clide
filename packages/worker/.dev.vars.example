@@ -1,0 +1,26 @@
+# Copy this file to .dev.vars for local development
+# cp .dev.vars.example .dev.vars
+
+ENVIRONMENT=development
+SHORT_DOMAIN=http://localhost:8787
+FRONTEND_URL=http://localhost:3000
+ALLOWED_DOMAIN=commercium.africa
+
+# Google OAuth (get from console.cloud.google.com)
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+
+# Session secret (any random string)
+SESSION_SECRET=local-dev-secret-change-me
+
+# SMS Providers (optional for local dev)
+KUDI_API_KEY=
+TERMII_API_KEY=
+AT_API_KEY=
+AT_USERNAME=
+
+# Webhook Secret
+WEBHOOK_SECRET=dev-webhook-secret
+
+# Demo password login (local dev only - bcrypt hash of "clide-demo-2024")
+DEMO_PASSWORD_ENABLED=true
