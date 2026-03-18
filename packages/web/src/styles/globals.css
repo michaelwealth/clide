@@ -1,6 +1,6 @@
-@import "tailwindcss";
-
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&family=Sora:wght@400;500;600;700;800&display=swap');
+
+@import "tailwindcss";
 
 /* ── Theme: custom design tokens ── */
 @theme {
@@ -85,4 +85,27 @@
 
 @utility badge-gray {
   @apply badge bg-gray-100 text-gray-600;
+}
+
+@utility badge-success {
+  @apply badge bg-emerald-50 text-emerald-700;
+}
+
+@utility badge-secondary {
+  @apply badge bg-gray-100 text-gray-500;
+}
+
+@utility animate-in {
+  animation: fadeSlideIn 0.2s ease-out;
+}
+
+@keyframes fadeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

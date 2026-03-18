@@ -9,8 +9,12 @@ export async function corsMiddleware(c: Context<{ Bindings: Env }>, next: Next) 
   const origin = c.req.header('Origin') || '';
   const allowedOrigin = c.env.FRONTEND_URL;
 
-  // Set CORS headers
-  c.header('Access-Control-Allow-Origin', allowedOrigin);
+  // In development, also allow localhost origins
+  const isAllowed = origin === allowedOrigin
+    || (c.env.ENVIRONMENT !== 'production' && /^https?:\/\/localhost(:\d+)?$/.test(origin));
+
+  // Set CORS headers — use request origin if allowed, else the configured origin
+  c.header('Access-Control-Allow-Origin', isAllowed ? origin : allowedOrigin);
   c.header('Access-Control-Allow-Credentials', 'true');
   c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');

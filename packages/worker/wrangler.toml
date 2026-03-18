@@ -8,6 +8,7 @@ compatibility_flags = ["nodejs_compat"]
 binding = "DB"
 database_name = "clide-db"
 database_id = "084f4ce3-4405-44ec-a0cf-ae93d75c1d3b"
+migrations_dir = "migrations"
 
 # ── KV Namespace ──
 [[kv_namespaces]]
@@ -69,6 +70,7 @@ ENVIRONMENT = "development"
 SHORT_DOMAIN = "http://localhost:8787"
 FRONTEND_URL = "http://localhost:3000"
 ALLOWED_DOMAIN = "commercium.africa"
+SUPER_ADMIN_EMAIL = "michael@commercium.africa"
 
 # Secrets (set via wrangler secret put):
 # GOOGLE_CLIENT_ID

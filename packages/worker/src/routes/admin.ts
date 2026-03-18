@@ -4,9 +4,6 @@ import { generateId } from '../lib/id';
 
 const admin = new Hono<{ Bindings: Env }>();
 
-/** Only this email may hold is_super_admin = true. */
-const SUPER_ADMIN_EMAIL = 'michael@commercium.africa';
-
 /**
  * GET /users
  * List all platform users.
@@ -17,9 +14,10 @@ admin.get('/users', async (c) => {
   const offset = (page - 1) * limit;
 
   const result = await c.env.DB.prepare(`
-    SELECT u.*, GROUP_CONCAT(wm.workspace_id || ':' || wm.role) as memberships
+    SELECT u.*, GROUP_CONCAT(wm.workspace_id || ':' || wm.role || ':' || COALESCE(w.name, '')) as memberships
     FROM users u
     LEFT JOIN workspace_members wm ON wm.user_id = u.id
+    LEFT JOIN workspaces w ON w.id = wm.workspace_id
     GROUP BY u.id
     ORDER BY u.created_at DESC
     LIMIT ? OFFSET ?
@@ -29,8 +27,8 @@ admin.get('/users', async (c) => {
     ...u,
     memberships: u.memberships
       ? u.memberships.split(',').map((m: string) => {
-          const [workspace_id, role] = m.split(':');
-          return { workspace_id, role };
+          const [workspace_id, role, ...nameParts] = m.split(':');
+          return { workspace_id, role, workspace_name: nameParts.join(':') || workspace_id };
         })
       : [],
   }));
@@ -81,7 +79,7 @@ admin.post('/users/invite', async (c) => {
   }
 
   const id = generateId();
-  const isSuperAdmin = body.is_super_admin && email === SUPER_ADMIN_EMAIL;
+  const isSuperAdmin = body.is_super_admin && email === c.env.SUPER_ADMIN_EMAIL;
   await c.env.DB.prepare(`
     INSERT INTO users (id, email, name, is_super_admin) VALUES (?, ?, ?, ?)
   `).bind(id, email, body.name.trim(), isSuperAdmin ? 1 : 0).run();
@@ -114,7 +112,7 @@ admin.put('/users/:userId', async (c) => {
   const wantsSuperAdmin = body.is_super_admin !== undefined ? body.is_super_admin : undefined;
   let superAdminValue: number | null = null;
   if (wantsSuperAdmin !== undefined) {
-    superAdminValue = (wantsSuperAdmin && user.email === SUPER_ADMIN_EMAIL) ? 1 : 0;
+    superAdminValue = (wantsSuperAdmin && user.email === c.env.SUPER_ADMIN_EMAIL) ? 1 : 0;
   }
 
   await c.env.DB.prepare(`

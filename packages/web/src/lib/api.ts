@@ -10,12 +10,14 @@ export class ApiError extends Error {
 async function request<T>(
   path: string,
   options: RequestInit = {},
-  timeoutMs = 8000
+  timeoutMs = 15000
 ): Promise<T> {
   const url = `${API_URL}${path}`;
 
   const controller = new AbortController();
-  const timer = timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  const timer = timeoutMs > 0
+    ? setTimeout(() => controller.abort('Request timed out'), timeoutMs)
+    : null;
 
   try {
     const res = await fetch(url, {
@@ -35,6 +37,12 @@ async function request<T>(
 
     if (res.status === 204) return {} as T;
     return res.json() as Promise<T>;
+  } catch (err) {
+    if (err instanceof ApiError) throw err;
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new ApiError(0, 'Request timed out');
+    }
+    throw new ApiError(0, (err as Error).message || 'Network error');
   } finally {
     if (timer) clearTimeout(timer);
   }

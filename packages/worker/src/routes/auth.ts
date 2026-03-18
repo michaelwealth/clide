@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Env, UserRow, KvSessionData } from '../types';
-import { setSession, deleteSession } from '../lib/kv';
+import { setSession, deleteSession, getSession } from '../lib/kv';
 import { generateId } from '../lib/id';
 
 const auth = new Hono<{ Bindings: Env }>();
@@ -169,7 +169,6 @@ auth.get('/me', async (c) => {
     return c.json({ error: 'Not authenticated' }, 401);
   }
 
-  const { getSession } = await import('../lib/kv');
   const session = await getSession(c.env.KV, match[1]);
   if (!session) {
     return c.json({ error: 'Session expired' }, 401);
@@ -281,24 +280,17 @@ auth.post('/password-login', async (c) => {
     ORDER BY w.name
   `).bind(user.id).all();
 
-  return new Response(
-    JSON.stringify({
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        avatar_url: user.avatar_url,
-        is_super_admin: user.is_super_admin === 1,
-      },
-      workspaces: workspaces.results,
-    }),
-    {
-      headers: {
-        'Content-Type': 'application/json',
-        'Set-Cookie': cookieFlags,
-      },
-    }
-  );
+  c.header('Set-Cookie', cookieFlags);
+  return c.json({
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      avatar_url: user.avatar_url,
+      is_super_admin: user.is_super_admin === 1,
+    },
+    workspaces: workspaces.results,
+  });
 });
 
 export { auth };

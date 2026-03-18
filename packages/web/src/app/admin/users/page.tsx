@@ -124,10 +124,14 @@ function InviteUserModal({ onClose }: { onClose: () => void }) {
 
   const invite = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!name.trim()) {
+      setError('Name is required');
+      return;
+    }
     setSaving(true);
     setError('');
     try {
-      await api.admin.users.invite({ email, name: name || '' });
+      await api.admin.users.invite({ email, name: name.trim() });
       onClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to invite');
@@ -155,8 +159,8 @@ function InviteUserModal({ onClose }: { onClose: () => void }) {
             <p className="text-xs text-gray-400 mt-1">Must be @commercium.africa domain</p>
           </div>
           <div>
-            <label className="label">Name (optional)</label>
-            <input className="input" value={name} onChange={e => setName(e.target.value)} />
+            <label className="label">Name</label>
+            <input className="input" required value={name} onChange={e => setName(e.target.value)} />
           </div>
           <div className="flex justify-end gap-3">
             <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>

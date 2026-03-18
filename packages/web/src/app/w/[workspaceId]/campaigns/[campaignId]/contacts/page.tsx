@@ -1,11 +1,19 @@
 'use client';
 
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, Suspense } from 'react';
 import { api, ApiError } from '@/lib/api';
 import Link from 'next/link';
 
-export default function ContactsPage() {
+export default function ContactsPageWrapper() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-gray-400">Loading contacts…</div>}>
+      <ContactsPage />
+    </Suspense>
+  );
+}
+
+function ContactsPage() {
   const { workspaceId, campaignId } = useParams() as { workspaceId: string; campaignId: string };
   const searchParams = useSearchParams();
   const router = useRouter();

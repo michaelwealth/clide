@@ -20,7 +20,7 @@ export interface SmsProvider {
 export class KudiProvider implements SmsProvider {
   name = 'kudi';
 
-  constructor(private apiKey: string) {}
+  constructor(private apiKey: string, private senderId: string = 'CLiDE') {}
 
   async send(phone: string, message: string): Promise<SmsResult> {
     try {
@@ -31,7 +31,7 @@ export class KudiProvider implements SmsProvider {
         },
         body: JSON.stringify({
           token: this.apiKey,
-          senderID: 'CLiDE',
+          senderID: this.senderId,
           recipients: phone,
           message,
         }),
@@ -55,7 +55,7 @@ export class KudiProvider implements SmsProvider {
 export class TermiiProvider implements SmsProvider {
   name = 'termii';
 
-  constructor(private apiKey: string) {}
+  constructor(private apiKey: string, private senderId: string = 'CLiDE') {}
 
   async send(phone: string, message: string): Promise<SmsResult> {
     try {
@@ -64,7 +64,7 @@ export class TermiiProvider implements SmsProvider {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           to: phone,
-          from: 'CLiDE',
+          from: this.senderId,
           sms: message,
           type: 'plain',
           channel: 'generic',
@@ -198,6 +198,9 @@ export function createSmsManager(env: {
  */
 export interface WorkspaceSmsConfig {
   provider_priority: string;
+  kudi_sender_id: string | null;
+  termii_sender_id: string | null;
+  at_sender_id: string | null;
   kudi_api_key: string | null;
   termii_api_key: string | null;
   at_api_key: string | null;
@@ -226,11 +229,11 @@ export function createSmsManagerFromConfig(
   const providerFactories: Record<string, () => void> = {
     kudi: () => {
       const key = config.kudi_api_key || env.KUDI_API_KEY;
-      if (key) manager.addProvider(new KudiProvider(key));
+      if (key) manager.addProvider(new KudiProvider(key, config.kudi_sender_id || 'CLiDE'));
     },
     termii: () => {
       const key = config.termii_api_key || env.TERMII_API_KEY;
-      if (key) manager.addProvider(new TermiiProvider(key));
+      if (key) manager.addProvider(new TermiiProvider(key, config.termii_sender_id || 'CLiDE'));
     },
     africastalking: () => {
       const key = config.at_api_key || env.AT_API_KEY;

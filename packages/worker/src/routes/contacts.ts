@@ -15,8 +15,8 @@ contacts.get('/', async (c) => {
 
   // Verify campaign belongs to workspace
   const campaign = await c.env.DB.prepare(
-    'SELECT id FROM campaigns WHERE id = ? AND workspace_id = ?'
-  ).bind(campaignId, workspace.id).first();
+    'SELECT id, campaign_key FROM campaigns WHERE id = ? AND workspace_id = ?'
+  ).bind(campaignId, workspace.id).first<{ id: string; campaign_key: string }>();
 
   if (!campaign) {
     return c.json({ error: 'Campaign not found' }, 404);
@@ -34,6 +34,7 @@ contacts.get('/', async (c) => {
     SELECT
       c.id, c.firstname, c.phone, c.created_at,
       l.slug, l.destination_url,
+      ? as campaign_key,
       COALESCE(s.status, 'not_sent') as sms_status,
       CASE WHEN cl.id IS NOT NULL THEN 1 ELSE 0 END as has_clicked,
       (SELECT COUNT(*) FROM click_logs cl2 WHERE cl2.contact_id = c.id AND cl2.campaign_id = c.campaign_id) as click_count,
@@ -59,7 +60,7 @@ contacts.get('/', async (c) => {
     ) tl ON tl.contact_id = c.id AND tl.campaign_id = c.campaign_id AND tl.rn = 1
     WHERE c.campaign_id = ? AND c.workspace_id = ?
   `;
-  const params: unknown[] = [campaignId, workspace.id];
+  const params: unknown[] = [campaign.campaign_key, campaignId, workspace.id];
 
   if (search) {
     const safeSearch = search.replace(/[%_]/g, '\\$&');

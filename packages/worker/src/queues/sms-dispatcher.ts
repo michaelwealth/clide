@@ -57,7 +57,7 @@ export async function processSmsDispatch(
   // Send via provider manager (with failover)
   // Load workspace-specific SMS config if available
   const wsConfig = await env.DB.prepare(
-    'SELECT provider_priority, kudi_api_key, termii_api_key, at_api_key, at_username FROM workspace_sms_config WHERE workspace_id = ?'
+    'SELECT provider_priority, kudi_api_key, kudi_sender_id, termii_api_key, termii_sender_id, at_api_key, at_username, at_sender_id FROM workspace_sms_config WHERE workspace_id = ?'
   ).bind(workspaceId).first<WorkspaceSmsConfig>();
 
   const manager = wsConfig

@@ -12,6 +12,7 @@ export interface Env {
   SHORT_DOMAIN: string;
   FRONTEND_URL: string;
   ALLOWED_DOMAIN: string;
+  SUPER_ADMIN_EMAIL: string;
 
   // Secrets
   GOOGLE_CLIENT_ID: string;

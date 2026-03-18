@@ -1,5 +1,5 @@
 import type { Env, CampaignRow } from '../types';
-import { invalidateCampaignStatusCache, setLinkData, getLinkData } from '../lib/kv';
+import { invalidateCampaignStatusCache, setCampaignStatusCache } from '../lib/kv';
 
 /**
  * Campaign lifecycle cron job.
@@ -56,27 +56,19 @@ export async function checkCampaignLifecycle(env: Env): Promise<void> {
 }
 
 /**
- * Update the status field in KV entries for all links in a campaign.
- * Used when campaign transitions to active.
+ * Update the status field in KV cache for a campaign.
+ * Uses setCampaignStatusCache for consistent 24h TTL.
  */
 async function updateCampaignLinksStatus(
   env: Env,
   campaign: CampaignRow,
   newStatus: string
 ): Promise<void> {
-  const links = await env.DB.prepare(`
-    SELECT l.slug FROM links l WHERE l.campaign_id = ?
-  `).bind(campaign.id).all<{ slug: string }>();
-
-  // Batch update KV entries - update campaign status cache instead
-  // This is more efficient than updating every individual KV entry
-  await env.KV.put(
-    `cs:${campaign.id}`,
-    JSON.stringify({
-      status: newStatus,
-      fallback_url: campaign.fallback_url,
-      end_at: campaign.end_at,
-    }),
-    { expirationTtl: 300 }
+  await setCampaignStatusCache(
+    env.KV,
+    campaign.id,
+    newStatus as any,
+    campaign.fallback_url,
+    campaign.end_at
   );
 }

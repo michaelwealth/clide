@@ -5,6 +5,7 @@ node_modules/
 packages/web/.next/
 packages/web/out/
 packages/worker/dist/
+*.tsbuildinfo
 
 # Wrangler
 packages/worker/.wrangler/

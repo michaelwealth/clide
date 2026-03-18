@@ -48,12 +48,13 @@ export function randomAlphanumeric(length: number): string {
 }
 
 /**
- * Generate a campaign key in {digit}{letter} format.
+ * Generate a campaign key in {letter}{digit}{letter} format.
+ * 26 × 10 × 26 = 6,760 possible keys — sufficient for per-workspace use.
  */
 export function generateCampaignKey(): string {
   const digits = '0123456789';
   const letters = 'abcdefghijklmnopqrstuvwxyz';
-  const bytes = new Uint8Array(2);
+  const bytes = new Uint8Array(3);
   crypto.getRandomValues(bytes);
-  return digits[bytes[0] % 10] + letters[bytes[1] % 26];
+  return letters[bytes[0] % 26] + digits[bytes[1] % 10] + letters[bytes[2] % 26];
 }

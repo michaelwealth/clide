@@ -52,10 +52,18 @@ app.get('/api/workspaces', async (c) => {
   const user = c.get('user');
   let result;
   if (user.is_super_admin) {
-    result = await c.env.DB.prepare('SELECT w.*, \'owner\' as role FROM workspaces w ORDER BY w.name').all();
+    result = await c.env.DB.prepare(`
+      SELECT w.*, 'owner' as role,
+        (SELECT COUNT(*) FROM workspace_members wm WHERE wm.workspace_id = w.id) as member_count,
+        (SELECT COUNT(*) FROM campaigns ca WHERE ca.workspace_id = w.id) as campaign_count
+      FROM workspaces w ORDER BY w.name
+    `).all();
   } else {
     result = await c.env.DB.prepare(`
-      SELECT w.*, wm.role FROM workspaces w
+      SELECT w.*, wm.role,
+        (SELECT COUNT(*) FROM workspace_members wm2 WHERE wm2.workspace_id = w.id) as member_count,
+        (SELECT COUNT(*) FROM campaigns ca WHERE ca.workspace_id = w.id) as campaign_count
+      FROM workspaces w
       JOIN workspace_members wm ON wm.workspace_id = w.id
       WHERE wm.user_id = ?
       ORDER BY w.name
