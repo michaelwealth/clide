@@ -4,6 +4,7 @@ import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useEffect, useState, useCallback, Suspense } from 'react';
 import { api, ApiError } from '@/lib/api';
 import Link from 'next/link';
+import { InfoTip, GuideBox } from '@/components/info-tip';
 
 export default function ContactsContentClient() {
   return (
@@ -117,7 +118,12 @@ function ContactsPage() {
       </div>
 
       <div className="flex items-center justify-between mb-6">
-        <h1 className="font-display text-2xl font-bold text-gray-900">Contacts</h1>
+        <div>
+          <h1 className="font-display text-2xl font-bold text-gray-900">
+            Contacts
+            <InfoTip text="Contacts are people uploaded via CSV for this campaign. Each contact gets a unique short link that resolves to their personalized destination URL." />
+          </h1>
+        </div>
         <button onClick={exportCsv} disabled={exporting} className="btn-secondary text-sm">
           {exporting ? 'Exporting…' : 'Export CSV'}
         </button>
@@ -201,9 +207,10 @@ function ContactsPage() {
                     <td className="px-4 py-3 text-gray-600">{c.phone}</td>
                     <td className="px-4 py-3">
                       {c.slug ? (
-                        <code className="text-xs text-brand-600 bg-brand-50 px-1.5 py-0.5 rounded">
-                          {c.campaign_key}/{c.slug}
-                        </code>
+                        <LinkPreview
+                          shortPath={`${c.campaign_key}/${c.slug}`}
+                          destinationUrl={c.destination_url}
+                        />
                       ) : '—'}
                     </td>
                     <td className="px-4 py-3">
@@ -274,4 +281,30 @@ function SmsStatusBadge({ status }: { status: string | null }) {
   };
   const labels: Record<string, string> = { not_sent: 'No SMS' };
   return <span className={`${map[status] || 'badge-gray'} text-xs`}>{labels[status] || status}</span>;
+}
+
+function LinkPreview({ shortPath, destinationUrl }: { shortPath: string; destinationUrl?: string }) {
+  const [show, setShow] = useState(false);
+  return (
+    <span className="relative inline-block" onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
+      <code className="text-xs text-brand-600 bg-brand-50 px-1.5 py-0.5 rounded cursor-help">
+        {shortPath}
+      </code>
+      {show && (
+        <div className="absolute z-50 bottom-full left-0 mb-2 w-80 bg-gray-900 text-white rounded-lg shadow-xl p-3 animate-in pointer-events-none">
+          <div className="mb-2">
+            <p className="text-[10px] uppercase tracking-wider text-gray-400 mb-0.5">Short Link</p>
+            <p className="text-xs font-mono break-all">s.cmaf.cc/{shortPath}</p>
+          </div>
+          {destinationUrl && (
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-gray-400 mb-0.5">Destination</p>
+              <p className="text-xs font-mono break-all text-brand-300">{destinationUrl}</p>
+            </div>
+          )}
+          <span className="absolute top-full left-4 border-4 border-transparent border-t-gray-900" />
+        </div>
+      )}
+    </span>
+  );
 }

@@ -1,10 +1,10 @@
 'use client';
 
-
 import { useParams } from 'next/navigation';
 import { useEffect, useState, useCallback } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { InfoTip, GuideBox } from '@/components/info-tip';
 
 export default function SettingsContent() {
   const { workspaceId } = useParams() as { workspaceId: string };
@@ -138,7 +138,10 @@ export default function SettingsContent() {
         <h2 className="font-display text-lg font-semibold mb-4">Workspace</h2>
         <div className="space-y-4">
           <div>
-            <label className="label">Name</label>
+            <label className="label">
+              Name
+              <InfoTip text="The display name for this workspace. Visible to all workspace members." />
+            </label>
             <div className="flex gap-2">
               <input
                 className="input flex-1"
@@ -323,6 +326,13 @@ function SmsConfigSection({ workspaceId, canManage }: { workspaceId: string; can
     }
   };
 
+  const updatePriority = (index: number, value: string) => {
+    const current = parsePriority(config?.provider_priority);
+    current[index] = value;
+    const filtered = current.filter(v => v !== 'none' && v !== '');
+    setConfig({ ...config, provider_priority: filtered.join(',') });
+  };
+
   if (loading) {
     return <div className="animate-pulse h-32 bg-gray-100 rounded" />;
   }
@@ -334,17 +344,36 @@ function SmsConfigSection({ workspaceId, canManage }: { workspaceId: string; can
 
       {/* Provider Priority */}
       <div className="card p-6">
-        <h2 className="font-display text-lg font-semibold mb-2">Provider Priority</h2>
-        <p className="text-xs text-gray-500 mb-3">
-          Order in which providers are tried. Failover occurs automatically on send failure.
+        <h2 className="font-display text-lg font-semibold mb-1">
+          Provider Priority
+          <InfoTip text="When sending SMS, the system tries the Primary provider first. If it fails, it falls back to Secondary, then Fallback. Set to 'None' if unused." />
+        </h2>
+        <p className="text-xs text-gray-500 mb-4">
+          Set the order in which SMS providers are tried. Failover happens automatically on send failure.
         </p>
-        <input
-          className="input"
-          value={config?.provider_priority || ''}
-          onChange={(e) => setConfig({ ...config, provider_priority: e.target.value })}
-          disabled={!canManage}
-          placeholder="kudi,termii,africastalking"
-        />
+        <GuideBox>
+          Configure at least one provider below, then set it as Primary. The system will try each provider in order: Primary → Secondary → Fallback.
+        </GuideBox>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+          <PriorityDropdown
+            label="Primary"
+            value={parsePriority(config?.provider_priority)[0]}
+            onChange={(v) => updatePriority(0, v)}
+            disabled={!canManage}
+          />
+          <PriorityDropdown
+            label="Secondary"
+            value={parsePriority(config?.provider_priority)[1]}
+            onChange={(v) => updatePriority(1, v)}
+            disabled={!canManage}
+          />
+          <PriorityDropdown
+            label="Fallback"
+            value={parsePriority(config?.provider_priority)[2]}
+            onChange={(v) => updatePriority(2, v)}
+            disabled={!canManage}
+          />
+        </div>
       </div>
 
       {/* Per-provider config */}
@@ -394,4 +423,50 @@ function fieldLabel(field: string): string {
     at_sender_id: 'Sender ID',
   };
   return labels[field] || field;
+}
+
+const PROVIDER_OPTIONS = [
+  { value: 'none', label: 'None' },
+  { value: 'kudi', label: 'Kudi SMS' },
+  { value: 'termii', label: 'Termii' },
+  { value: 'africastalking', label: "Africa's Talking" },
+];
+
+function parsePriority(raw: string | undefined): string[] {
+  if (!raw) return ['none', 'none', 'none'];
+  const parts = raw.split(',').map(s => s.trim()).filter(Boolean);
+  return [parts[0] || 'none', parts[1] || 'none', parts[2] || 'none'];
+}
+
+function PriorityDropdown({
+  label,
+  value,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  disabled: boolean;
+}) {
+  const colorMap: Record<string, string> = {
+    Primary: 'border-brand-200 bg-brand-50/30',
+    Secondary: 'border-gray-200',
+    Fallback: 'border-gray-200',
+  };
+  return (
+    <div>
+      <label className="label text-xs">{label}</label>
+      <select
+        className={`input ${colorMap[label] || ''}`}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+      >
+        {PROVIDER_OPTIONS.map(opt => (
+          <option key={opt.value} value={opt.value}>{opt.label}</option>
+        ))}
+      </select>
+    </div>
+  );
 }

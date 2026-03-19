@@ -5,6 +5,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { CampaignStatusBadge } from '../_components';
 import Link from 'next/link';
+import { InfoTip, GuideBox } from '@/components/info-tip';
 
 export default function CampaignDetailClient() {
   const { workspaceId, campaignId } = useParams() as { workspaceId: string; campaignId: string };
@@ -150,19 +151,19 @@ export default function CampaignDetailClient() {
       {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <div className="card p-4">
-          <p className="text-xs text-gray-500 uppercase tracking-wide">Contacts</p>
+          <p className="text-xs text-gray-500 uppercase tracking-wide">Contacts <InfoTip text="Total people uploaded via CSV for this campaign" /></p>
           <p className="font-display text-xl font-bold mt-1">{stats?.contacts ?? 0}</p>
         </div>
         <div className="card p-4">
-          <p className="text-xs text-gray-500 uppercase tracking-wide">Links</p>
+          <p className="text-xs text-gray-500 uppercase tracking-wide">Links <InfoTip text="Unique short links generated — one per contact" /></p>
           <p className="font-display text-xl font-bold mt-1">{stats?.links ?? 0}</p>
         </div>
         <div className="card p-4">
-          <p className="text-xs text-gray-500 uppercase tracking-wide">Clicks</p>
+          <p className="text-xs text-gray-500 uppercase tracking-wide">Clicks <InfoTip text="Total clicks across all short links in this campaign" /></p>
           <p className="font-display text-xl font-bold mt-1">{stats?.clicks ?? 0}</p>
         </div>
         <div className="card p-4">
-          <p className="text-xs text-gray-500 uppercase tracking-wide">SMS Sent</p>
+          <p className="text-xs text-gray-500 uppercase tracking-wide">SMS Sent <InfoTip text="Total SMS messages queued or sent for this campaign" /></p>
           <p className="font-display text-xl font-bold mt-1">{stats?.sms_sent ?? 0}</p>
         </div>
       </div>
@@ -172,12 +173,17 @@ export default function CampaignDetailClient() {
         <div className="card p-6">
           <h2 className="font-display text-lg font-semibold mb-4">Details</h2>
           <dl className="space-y-3 text-sm">
-            <div className="flex justify-between">
-              <dt className="text-gray-500">Destination URL</dt>
-              <dd className="text-gray-900 truncate ml-4 max-w-[250px]">{campaign.base_url}</dd>
+            <div>
+              <dt className="text-gray-500 mb-0.5">Destination URL <InfoTip text="The URL each contact's short link redirects to. If it contains {placeholders}, they will be replaced with each contact's CSV data." /></dt>
+              <dd className="text-gray-900 break-all text-xs font-mono bg-gray-50 p-2 rounded">{campaign.base_url}</dd>
+              {/\{\w+\}/.test(campaign.base_url || '') && (
+                <p className="text-xs text-brand-600 mt-1">
+                  Personalized: {(campaign.base_url.match(/\{(\w+)\}/g) || []).join(', ')}
+                </p>
+              )}
             </div>
             <div className="flex justify-between">
-              <dt className="text-gray-500">Fallback URL</dt>
+              <dt className="text-gray-500">Fallback URL <InfoTip text="Where links redirect when the campaign is expired or paused" /></dt>
               <dd className="text-gray-900 truncate ml-4 max-w-[250px]">{campaign.fallback_url}</dd>
             </div>
             <div className="flex justify-between">
@@ -303,6 +309,23 @@ function UploadModal({ workspaceId, campaignId, onClose }: { workspaceId: string
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [preview, setPreview] = useState<string[]>([]);
+
+  const handleFileChange = (f: File | null) => {
+    setFile(f);
+    setPreview([]);
+    if (f) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const text = e.target?.result as string;
+        const firstLine = text.split('\n')[0];
+        if (firstLine) {
+          setPreview(firstLine.split(',').map(h => h.trim().replace(/^"|"$/g, '')));
+        }
+      };
+      reader.readAsText(f.slice(0, 2048));
+    }
+  };
 
   const upload = async () => {
     if (!file) return;
@@ -320,19 +343,51 @@ function UploadModal({ workspaceId, campaignId, onClose }: { workspaceId: string
   };
 
   return (
-    <Modal title="Upload CSV" onClose={onClose}>
+    <Modal title="Upload Contacts CSV" onClose={onClose}>
       {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
       {success && <p className="text-green-600 text-sm mb-3">{success}</p>}
-      <div className="mb-4">
-        <label className="label">CSV File (max 5,000 rows)</label>
+
+      <GuideBox>
+        <p className="font-medium mb-1">CSV Requirements</p>
+        <ul className="list-disc list-inside space-y-0.5">
+          <li><strong>Required columns:</strong> firstname (or name), phone (or mobile)</li>
+          <li><strong>Optional columns:</strong> email, city, or any custom fields</li>
+          <li>Max 5,000 rows per upload</li>
+          <li>Phone numbers will be auto-formatted to international format (234...)</li>
+        </ul>
+        <p className="mt-2 font-medium">URL Personalization</p>
+        <p>If your Destination URL contains <code className="bg-brand-100 px-1 rounded">{'{column_name}'}</code> placeholders, they will be replaced with each contact&apos;s data from the matching CSV column.</p>
+        <p className="mt-1 text-[10px] text-brand-600">
+          Example: URL <code>https://example.com?name={'{fname}'}&city={'{city}'}</code> + CSV columns &quot;fname&quot; and &quot;city&quot; → each contact gets a personalized destination.
+        </p>
+      </GuideBox>
+
+      <div className="mt-4 mb-4">
+        <label className="label">CSV File</label>
         <input
           type="file"
           accept=".csv"
-          onChange={e => setFile(e.target.files?.[0] || null)}
+          onChange={e => handleFileChange(e.target.files?.[0] || null)}
           className="input"
         />
-        <p className="text-xs text-gray-400 mt-2">Required columns: firstname, phone</p>
       </div>
+
+      {preview.length > 0 && (
+        <div className="mb-4 p-3 bg-gray-50 rounded-lg">
+          <p className="text-xs font-medium text-gray-500 mb-1">Detected columns:</p>
+          <div className="flex flex-wrap gap-1.5">
+            {preview.map(h => (
+              <span key={h} className="px-2 py-0.5 bg-white border border-gray-200 rounded text-xs text-gray-700 font-mono">
+                {h}
+              </span>
+            ))}
+          </div>
+          <p className="text-[10px] text-gray-400 mt-2">
+            Use these column names as {'{placeholders}'} in your Destination URL and SMS Template.
+          </p>
+        </div>
+      )}
+
       <div className="flex justify-end gap-3">
         <button onClick={onClose} className="btn-secondary">Cancel</button>
         <button onClick={upload} disabled={!file || uploading} className="btn-primary">
@@ -369,9 +424,15 @@ function TriggerFormModal({ workspaceId, campaignId, onClose }: { workspaceId: s
   return (
     <Modal title="Add Trigger Rule" onClose={onClose}>
       {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
-      <div className="space-y-4">
+      <GuideBox>
+        Triggers send automated follow-up SMS to contacts based on their click behavior. <strong>On Click</strong> fires when a contact clicks their link. <strong>No Click</strong> fires after a delay if they haven&apos;t clicked.
+      </GuideBox>
+      <div className="space-y-4 mt-4">
         <div>
-          <label className="label">Trigger Type</label>
+          <label className="label">
+            Trigger Type
+            <InfoTip text="'On Click' sends an SMS immediately when a contact clicks their link. 'No Click' sends after the specified delay if the contact hasn't clicked." />
+          </label>
           <select className="input" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>
             <option value="click">On Click</option>
             <option value="no_click">No Click (after delay)</option>

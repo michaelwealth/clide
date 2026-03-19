@@ -1,11 +1,11 @@
 'use client';
 
-
 import { useParams } from 'next/navigation';
 import { useEffect, useState, useCallback } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { CampaignStatusBadge } from './_components';
 import Link from 'next/link';
+import { InfoTip, GuideBox } from '@/components/info-tip';
 
 interface Campaign {
   id: string;
@@ -67,7 +67,10 @@ export default function CampaignsContent() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="font-display text-2xl font-bold text-gray-900">Campaigns</h1>
+          <h1 className="font-display text-2xl font-bold text-gray-900">
+            Campaigns
+            <InfoTip text="A campaign groups contacts, short links, and SMS messages together. Create a campaign, set the destination URL (with optional personalization parameters), upload a CSV of contacts, and dispatch SMS." />
+          </h1>
           <p className="text-sm text-gray-500 mt-1">Manage your link campaigns</p>
         </div>
         <button onClick={() => setShowCreate(true)} className="btn-primary">
@@ -158,17 +161,28 @@ export default function CampaignsContent() {
                 />
               </div>
               <div>
-                <label className="label">Destination URL</label>
+                <label className="label">
+                  Destination URL
+                  <InfoTip text="The URL each contact's short link will redirect to. Use {column_name} placeholders to personalize — e.g. https://example.com?name={firstname}&city={city}. Column names must match your CSV headers." />
+                </label>
                 <input
                   className="input"
                   type="url"
                   value={form.base_url}
                   onChange={e => setForm({ ...form, base_url: e.target.value })}
-                  placeholder="https://example.com/landing"
+                  placeholder="https://example.com/landing?name={firstname}"
                 />
+                {form.base_url && /\{\w+\}/.test(form.base_url) && (
+                  <p className="text-xs text-brand-600 mt-1">
+                    Parameters detected: {(form.base_url.match(/\{(\w+)\}/g) || []).map(p => p).join(', ')}
+                  </p>
+                )}
               </div>
               <div>
-                <label className="label">Fallback URL</label>
+                <label className="label">
+                  Fallback URL
+                  <InfoTip text="If the campaign expires or is paused, short links will redirect here instead of the destination URL." />
+                </label>
                 <input
                   className="input"
                   type="url"
@@ -178,14 +192,17 @@ export default function CampaignsContent() {
                 />
               </div>
               <div>
-                <label className="label">SMS Template (optional)</label>
+                <label className="label">
+                  SMS Template (optional)
+                  <InfoTip text="The message sent to each contact via SMS. Use {firstname} for their name and {link} for their personalized short link. You can also use any CSV column name as a variable." />
+                </label>
                 <textarea
                   className="input min-h-[80px]"
                   value={form.sms_template}
                   onChange={e => setForm({ ...form, sms_template: e.target.value })}
                   placeholder="Hi {firstname}, check out {link}"
                 />
-                <p className="text-xs text-gray-400 mt-1">Use {'{firstname}'} and {'{link}'} as variables</p>
+                <p className="text-xs text-gray-400 mt-1">Variables: {'{firstname}'}, {'{link}'}, or any CSV column name like {'{email}'}, {'{city}'}</p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>

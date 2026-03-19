@@ -1,6 +1,6 @@
 import type { Env, CsvUploadRow, CampaignRow, ContactRow, KvLinkData } from '../types';
 import { generateId } from '../lib/id';
-import { generateUniqueSlug, normalizePhone } from '../lib/helpers';
+import { generateUniqueSlug, normalizePhone, interpolateTemplate } from '../lib/helpers';
 import { setLinkData } from '../lib/kv';
 
 /**
@@ -148,7 +148,14 @@ export async function processCsvUpload(
         const slug = await generateUniqueSlug(firstname, existingSlugs);
         existingSlugs.add(slug);
 
-        const destinationUrl = campaign.base_url;
+        // Interpolate URL parameters: {column_name} → contact's CSV value
+        const urlVariables: Record<string, string> = {
+          firstname,
+          phone,
+          ...rowMap, // all raw CSV columns available as {column_name}
+          ...extraData,
+        };
+        const destinationUrl = interpolateTemplate(campaign.base_url, urlVariables);
 
         // Insert contact
         dbStatements.push(

@@ -1,9 +1,9 @@
 'use client';
 
-
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { api } from '@/lib/api';
+import { InfoTip, GuideBox } from '@/components/info-tip';
 
 interface ShortLink {
   id: string;
@@ -91,7 +91,10 @@ export default function LinksContent() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="font-display text-2xl font-bold text-gray-900">Short Links</h1>
+          <h1 className="font-display text-2xl font-bold text-gray-900">
+            Short Links
+            <InfoTip text="Standalone short links not tied to a campaign. Use these for one-off URLs, social media posts, or email signatures. For campaign-based links with SMS dispatch, create a Campaign instead." />
+          </h1>
           <p className="text-sm text-gray-500 mt-1">
             {pagination.total} link{pagination.total !== 1 ? 's' : ''}
           </p>
@@ -111,7 +114,10 @@ export default function LinksContent() {
           <h2 className="font-medium text-gray-900 mb-4">Create Short Link</h2>
           <form onSubmit={handleCreate} className="space-y-3">
             <div>
-              <label className="label text-xs">Destination URL *</label>
+              <label className="label text-xs">
+                Destination URL *
+                <InfoTip text="The full URL that this short link will redirect to when someone clicks it." />
+              </label>
               <input
                 type="url"
                 value={formUrl}
@@ -133,7 +139,10 @@ export default function LinksContent() {
                 />
               </div>
               <div>
-                <label className="label text-xs">Custom Slug (optional)</label>
+                <label className="label text-xs">
+                  Custom Slug (optional)
+                  <InfoTip text="A custom slug like 'my-link' creates s.cmaf.cc/my-link. Leave empty for an auto-generated slug." />
+                </label>
                 <input
                   type="text"
                   value={formSlug}

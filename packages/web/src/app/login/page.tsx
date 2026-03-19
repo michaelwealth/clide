@@ -18,12 +18,17 @@ export default function LoginPage() {
 
   useEffect(() => { setMounted(true); }, []);
 
-  if (!loading && user) {
-    if (workspaces.length > 0) {
-      router.replace(`/w/${workspaces[0].id}/dashboard`);
-    } else {
-      router.replace('/');
+  useEffect(() => {
+    if (!loading && user) {
+      if (workspaces.length > 0) {
+        router.replace(`/w/${workspaces[0].id}/dashboard`);
+      } else {
+        router.replace('/');
+      }
     }
+  }, [loading, user, workspaces, router]);
+
+  if (!loading && user) {
     return null;
   }
 

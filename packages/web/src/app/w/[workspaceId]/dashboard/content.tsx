@@ -1,10 +1,10 @@
 'use client';
 
-
 import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import Link from 'next/link';
+import { InfoTip } from '@/components/info-tip';
 
 interface Stats {
   campaigns: Array<{ status: string; count: number }>;
@@ -48,7 +48,10 @@ export default function DashboardContent() {
   return (
     <div>
       <div className="mb-8">
-        <h1 className="font-display text-2xl font-bold text-gray-900">Dashboard</h1>
+        <h1 className="font-display text-2xl font-bold text-gray-900">
+          Dashboard
+          <InfoTip text="A real-time summary of your workspace activity — campaigns, contacts, SMS delivery, and link clicks." />
+        </h1>
         <p className="text-sm text-gray-500 mt-1">Overview of your workspace activity</p>
       </div>
 
