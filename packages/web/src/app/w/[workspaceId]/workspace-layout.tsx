@@ -303,7 +303,7 @@ export default function WorkspaceLayoutClient({ children }: { children: ReactNod
         </header>
 
         {/* Page content */}
-        <main className="flex-1 p-6 lg:p-8 overflow-y-auto">
+        <main className="flex-1 px-6 pb-8 pt-8 lg:px-8 lg:pb-8 lg:pt-10 overflow-y-auto">
           {children}
         </main>
       </div>

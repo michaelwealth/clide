@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, type ReactNode } from 'react';
 import { useParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { InfoTip, GuideBox } from '@/components/info-tip';
@@ -348,19 +348,28 @@ export default function LinksContent() {
                     {new Date(link.created_at).toLocaleDateString()}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <div className="inline-flex items-center gap-3">
-                      <button
-                        onClick={() => downloadQr(link.slug)}
-                        className="text-brand-600 hover:text-brand-800 text-xs font-medium"
+                    <div className="inline-flex items-end gap-4">
+                      <IconAction label="QR" onClick={() => downloadQr(link.slug)}>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2m2 0h2m-6 3h6m-6 3h2m2 0h2" />
+                        </svg>
+                      </IconAction>
+                      <IconAction
+                        label="Edit"
+                        onClick={() => {
+                          setSelectedLink(link);
+                          setShowEditModal(true);
+                        }}
                       >
-                        Download QR
-                      </button>
-                      <button
-                        onClick={() => handleDelete(link.id)}
-                        className="text-red-500 hover:text-red-700 text-xs font-medium"
-                      >
-                        Delete
-                      </button>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487a2.1 2.1 0 113.03 2.898L9.7 18.017l-4.2 1.05 1.05-4.2L16.862 4.487z" />
+                        </svg>
+                      </IconAction>
+                      <IconAction label="Delete" onClick={() => handleDelete(link.id)} danger>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 7h12M9 7V5h6v2m-7 4v6m4-6v6m4-6v6M5 7l1 12h12l1-12" />
+                        </svg>
+                      </IconAction>
                     </div>
                   </td>
                 </tr>
@@ -509,6 +518,29 @@ function EditLinkModal({
         <button onClick={save} disabled={saving} className="btn-primary text-sm">{saving ? 'Saving...' : 'Save'}</button>
       </div>
     </ActionModal>
+  );
+}
+
+function IconAction({
+  label,
+  onClick,
+  children,
+  danger = false,
+}: {
+  label: string;
+  onClick: () => void;
+  children: ReactNode;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`inline-flex flex-col items-center gap-1 ${danger ? 'text-red-500 hover:text-red-700' : 'text-gray-600 hover:text-brand-700'}`}
+      title={label}
+    >
+      <span>{children}</span>
+      <span className="text-[10px] leading-none">{label}</span>
+    </button>
   );
 }
 
