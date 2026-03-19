@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { Env, CampaignRow, ContactRow, LinkRow, SmsLogRow } from '../types';
+import type { Env, CampaignRow, ContactRow, LinkRow, SmsLogRow, SmsDispatchMessage } from '../types';
 import { generateId } from '../lib/id';
 import { interpolateTemplate, normalizePhone } from '../lib/helpers';
 import { requireRole } from '../middleware/tenant';
@@ -27,8 +27,8 @@ sms.post('/send', requireRole('admin'), async (c) => {
     return c.json({ error: 'Campaign has no SMS template' }, 400);
   }
 
-  if (!['active', 'scheduled'].includes(campaign.status)) {
-    return c.json({ error: 'Campaign must be active or scheduled to send SMS' }, 400);
+  if (campaign.status !== 'active') {
+    return c.json({ error: 'Campaign must be active to send SMS' }, 400);
   }
 
   const body = await c.req.json<{ contact_ids?: string[]; send_all?: boolean }>();
@@ -52,6 +52,9 @@ sms.post('/send', requireRole('admin'), async (c) => {
     `;
     contactsParams = [campaignId, workspace.id];
   } else if (body.contact_ids?.length) {
+    if (body.contact_ids.length > 500) {
+      return c.json({ error: 'Maximum 500 contact IDs per request. Use send_all for larger batches.' }, 400);
+    }
     const placeholders = body.contact_ids.map(() => '?').join(',');
     contactsQuery = `
       SELECT c.*, l.slug, l.destination_url
@@ -75,6 +78,7 @@ sms.post('/send', requireRole('admin'), async (c) => {
   const shortBase = c.env.SHORT_DOMAIN;
   let queued = 0;
   let skipped = 0;
+  const queueMessages: SmsDispatchMessage[] = [];
 
   for (const contact of result.results) {
     const phone = normalizePhone(contact.phone);
@@ -118,8 +122,8 @@ sms.post('/send', requireRole('admin'), async (c) => {
       continue;
     }
 
-    // Enqueue for sending
-    await c.env.SMS_QUEUE.send({
+    // Collect for batch queue send
+    queueMessages.push({
       type: 'sms_send',
       sms_log_id: smsLogId,
       contact_id: contact.id,
@@ -131,6 +135,14 @@ sms.post('/send', requireRole('admin'), async (c) => {
     });
 
     queued++;
+  }
+
+  // Batch-enqueue SMS messages in parallel chunks
+  const QUEUE_CHUNK = 25;
+  for (let qi = 0; qi < queueMessages.length; qi += QUEUE_CHUNK) {
+    await Promise.all(
+      queueMessages.slice(qi, qi + QUEUE_CHUNK).map(msg => c.env.SMS_QUEUE.send(msg))
+    );
   }
 
   return c.json({

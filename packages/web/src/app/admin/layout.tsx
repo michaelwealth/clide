@@ -18,7 +18,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   if (loading || !user?.is_super_admin) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-pulse text-gray-400">Loading…</div>
+        <div className="animate-spin h-8 w-8 border-2 border-brand-600 border-t-transparent rounded-full" />
       </div>
     );
   }

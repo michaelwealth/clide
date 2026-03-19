@@ -86,14 +86,47 @@ contacts.get('/', async (c) => {
 
   const result = await c.env.DB.prepare(query).bind(...params).all();
 
-  // Total count
-  let countQuery = 'SELECT COUNT(*) as total FROM contacts c WHERE c.campaign_id = ? AND c.workspace_id = ?';
-  const countParams: unknown[] = [campaignId, workspace.id];
+  // Total count — must mirror same JOINs and filters as the data query
+  let countQuery = 'SELECT COUNT(*) as total FROM contacts c';
+  const countParams: unknown[] = [];
+
+  if (smsStatus) {
+    countQuery += `
+      LEFT JOIN (
+        SELECT contact_id, campaign_id, status,
+          ROW_NUMBER() OVER (PARTITION BY contact_id, campaign_id ORDER BY created_at DESC) as rn
+        FROM sms_logs WHERE message_type = 'campaign'
+      ) s ON s.contact_id = c.id AND s.campaign_id = c.campaign_id AND s.rn = 1`;
+  }
+  if (clickStatus) {
+    countQuery += `
+      LEFT JOIN (
+        SELECT contact_id, campaign_id, id,
+          ROW_NUMBER() OVER (PARTITION BY contact_id, campaign_id ORDER BY clicked_at DESC) as rn
+        FROM click_logs
+      ) cl ON cl.contact_id = c.id AND cl.campaign_id = c.campaign_id AND cl.rn = 1`;
+  }
+
+  countQuery += ' WHERE c.campaign_id = ? AND c.workspace_id = ?';
+  countParams.push(campaignId, workspace.id);
+
   if (search) {
     const safeSearch = search.replace(/[%_]/g, '\\$&');
     countQuery += " AND (c.firstname LIKE ? ESCAPE '\\' OR c.phone LIKE ? ESCAPE '\\')";
     countParams.push(`%${safeSearch}%`, `%${safeSearch}%`);
   }
+  if (smsStatus === 'not_sent') {
+    countQuery += ' AND s.status IS NULL';
+  } else if (smsStatus) {
+    countQuery += ' AND s.status = ?';
+    countParams.push(smsStatus);
+  }
+  if (clickStatus === 'clicked') {
+    countQuery += ' AND cl.id IS NOT NULL';
+  } else if (clickStatus === 'not_clicked') {
+    countQuery += ' AND cl.id IS NULL';
+  }
+
   const total = await c.env.DB.prepare(countQuery).bind(...countParams).first<{ total: number }>();
 
   return c.json({

@@ -43,10 +43,10 @@ export async function generateUniqueSlug(
 }
 
 /**
- * Validate a campaign key format: {digit}{letter}
+ * Validate a campaign key format: {letter}{digit}{letter}
  */
 export function isValidCampaignKey(key: string): boolean {
-  return /^[0-9][a-z]$/.test(key);
+  return /^[a-z][0-9][a-z]$/.test(key);
 }
 
 /**

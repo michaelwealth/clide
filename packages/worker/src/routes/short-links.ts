@@ -154,21 +154,32 @@ shortLinks.put('/:linkId', requireRole('operator'), async (c) => {
     try { new URL(body.destination_url); } catch { return c.json({ error: 'Invalid URL' }, 400); }
   }
 
-  await c.env.DB.prepare(`
-    UPDATE short_links SET
-      destination_url = COALESCE(?, destination_url),
-      title = COALESCE(?, title),
-      is_active = COALESCE(?, is_active),
-      expires_at = COALESCE(?, expires_at),
-      updated_at = datetime('now')
-    WHERE id = ? AND workspace_id = ?
-  `).bind(
-    body.destination_url || null,
-    body.title !== undefined ? (body.title || null) : null,
-    body.is_active !== undefined ? (body.is_active ? 1 : 0) : null,
-    body.expires_at !== undefined ? body.expires_at : null,
-    linkId, workspace.id
-  ).run();
+  const sets: string[] = [];
+  const params: unknown[] = [];
+
+  if (body.destination_url !== undefined) {
+    sets.push('destination_url = ?');
+    params.push(body.destination_url);
+  }
+  if (body.title !== undefined) {
+    sets.push('title = ?');
+    params.push(body.title || null);
+  }
+  if (body.is_active !== undefined) {
+    sets.push('is_active = ?');
+    params.push(body.is_active ? 1 : 0);
+  }
+  if (body.expires_at !== undefined) {
+    sets.push('expires_at = ?');
+    params.push(body.expires_at || null);
+  }
+
+  if (sets.length > 0) {
+    sets.push("updated_at = datetime('now')");
+    await c.env.DB.prepare(
+      `UPDATE short_links SET ${sets.join(', ')} WHERE id = ? AND workspace_id = ?`
+    ).bind(...params, linkId, workspace.id).run();
+  }
 
   // Update KV (sync active state and expiry)
   const newUrl = body.destination_url || link.destination_url;

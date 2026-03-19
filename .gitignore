@@ -4,6 +4,7 @@ node_modules/
 # Build outputs
 packages/web/.next/
 packages/web/out/
+packages/web/.vercel/
 packages/worker/dist/
 *.tsbuildinfo
 

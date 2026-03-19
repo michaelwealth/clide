@@ -211,7 +211,8 @@ auth.post('/password-login', async (c) => {
   }
 
   // Rate limit: max 5 attempts per email per 5 minutes
-  const rateLimitKey = `rl:pwd:${body.email}`;
+  const normalizedEmail = body.email.toLowerCase().trim();
+  const rateLimitKey = `rl:pwd:${normalizedEmail}`;
   const attempts = parseInt(await c.env.KV.get(rateLimitKey) || '0', 10);
   if (attempts >= 5) {
     return c.json({ error: 'Too many login attempts. Try again later.' }, 429);

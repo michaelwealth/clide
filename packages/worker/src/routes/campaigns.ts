@@ -163,7 +163,7 @@ campaigns.get('/:campaignId', async (c) => {
  */
 campaigns.put('/:campaignId', requireRole('operator'), async (c) => {
   const { workspace } = c.get('workspace');
-  const campaignId = c.req.param('campaignId');
+  const campaignId = c.req.param('campaignId')!;
 
   const campaign = await c.env.DB.prepare(
     'SELECT * FROM campaigns WHERE id = ? AND workspace_id = ?'
@@ -199,25 +199,46 @@ campaigns.put('/:campaignId', requireRole('operator'), async (c) => {
     return c.json({ error: 'start_at must be before end_at' }, 400);
   }
 
-  await c.env.DB.prepare(`
-    UPDATE campaigns SET
-      name = COALESCE(?, name),
-      base_url = COALESCE(?, base_url),
-      fallback_url = COALESCE(?, fallback_url),
-      sms_template = COALESCE(?, sms_template),
-      start_at = COALESCE(?, start_at),
-      end_at = COALESCE(?, end_at),
-      updated_at = datetime('now')
-    WHERE id = ? AND workspace_id = ?
-  `).bind(
-    body.name?.trim() || null,
-    body.base_url || null,
-    body.fallback_url || null,
-    body.sms_template ?? null,
-    body.start_at || null,
-    body.end_at || null,
-    campaignId, workspace.id
-  ).run();
+  // Build dynamic update to allow clearing nullable fields
+  const sets: string[] = [];
+  const params: unknown[] = [];
+
+  if (body.name !== undefined && body.name.trim()) {
+    sets.push('name = ?');
+    params.push(body.name.trim());
+  }
+  if (body.base_url !== undefined) {
+    sets.push('base_url = ?');
+    params.push(body.base_url);
+  }
+  if (body.fallback_url !== undefined) {
+    sets.push('fallback_url = ?');
+    params.push(body.fallback_url);
+  }
+  if (body.sms_template !== undefined) {
+    sets.push('sms_template = ?');
+    params.push(body.sms_template || null);
+  }
+  if (body.start_at !== undefined) {
+    sets.push('start_at = ?');
+    params.push(body.start_at || null);
+  }
+  if (body.end_at !== undefined) {
+    sets.push('end_at = ?');
+    params.push(body.end_at || null);
+  }
+
+  if (sets.length > 0) {
+    sets.push("updated_at = datetime('now')");
+    await c.env.DB.prepare(
+      `UPDATE campaigns SET ${sets.join(', ')} WHERE id = ? AND workspace_id = ?`
+    ).bind(...params, campaignId, workspace.id).run();
+  }
+
+  // If fallback_url or end_at changed, invalidate the KV status cache
+  if (body.fallback_url !== undefined || body.end_at !== undefined) {
+    await invalidateCampaignStatusCache(c.env.KV, campaignId);
+  }
 
   return c.json({ ok: true });
 });

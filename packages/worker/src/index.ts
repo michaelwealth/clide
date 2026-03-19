@@ -39,6 +39,15 @@ const app = new Hono<{ Bindings: Env }>();
 // ── Global Middleware ──
 app.use('/api/*', corsMiddleware);
 
+// ── Global Error Handler ──
+app.onError((err, c) => {
+  if (err instanceof SyntaxError && err.message.includes('JSON')) {
+    return c.json({ error: 'Invalid JSON in request body' }, 400);
+  }
+  console.error('Unhandled error:', err);
+  return c.json({ error: 'Internal server error' }, 500);
+});
+
 // ── Public Routes ──
 app.route('/api/auth', auth);
 app.route('/api/webhooks/sms', webhooks);

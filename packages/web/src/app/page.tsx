@@ -1,5 +1,7 @@
 'use client';
 
+export const runtime = 'edge';
+
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
@@ -21,7 +23,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center">
-      <div className="animate-pulse text-gray-400">Loading…</div>
+      <div className="animate-spin h-8 w-8 border-2 border-brand-600 border-t-transparent rounded-full" />
     </div>
   );
 }

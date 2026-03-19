@@ -142,15 +142,18 @@ export async function checkNoClickTriggers(env: Env): Promise<void> {
       LIMIT 50
     `).bind(rule.campaign_id, cutoff, rule.id).all<ContactRow>();
 
-    for (const contact of eligibleContacts.results) {
-      // Enqueue trigger event
-      await env.TRIGGER_QUEUE.send({
-        type: 'trigger_check',
-        trigger_rule_id: rule.id,
-        contact_id: contact.id,
-        campaign_id: rule.campaign_id,
-        event: 'no_click',
-      });
+    if (eligibleContacts.results.length > 0) {
+      await Promise.all(
+        eligibleContacts.results.map(contact =>
+          env.TRIGGER_QUEUE.send({
+            type: 'trigger_check',
+            trigger_rule_id: rule.id,
+            contact_id: contact.id,
+            campaign_id: rule.campaign_id,
+            event: 'no_click',
+          })
+        )
+      );
     }
   }
 }

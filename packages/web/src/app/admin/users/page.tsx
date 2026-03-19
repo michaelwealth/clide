@@ -1,5 +1,7 @@
 'use client';
 
+export const runtime = 'edge';
+
 import { useEffect, useState, useCallback } from 'react';
 import { api, ApiError } from '@/lib/api';
 
@@ -141,8 +143,8 @@ function InviteUserModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-      <div className="card w-full max-w-md mx-4 p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
+      <div className="card w-full max-w-md mx-4 p-6" onClick={e => e.stopPropagation()}>
         <h2 className="font-display text-lg font-semibold mb-4">Invite User</h2>
         {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
         <form onSubmit={invite} className="space-y-4">

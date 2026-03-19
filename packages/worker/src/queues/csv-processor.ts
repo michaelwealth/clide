@@ -203,19 +203,23 @@ export async function processCsvUpload(
       }
     }
 
-    // Write KV entries
+    // Write KV entries in parallel chunks
     const endAt = campaign.end_at ? Math.floor(new Date(campaign.end_at).getTime() / 1000) : 0;
-    for (const kv of kvWrites) {
-      const kvData: KvLinkData = {
-        d: campaign.base_url,
-        f: campaign.fallback_url,
-        c: campaignId,
-        t: kv.contactId,
-        l: kv.linkId,
-        e: endAt,
-        s: campaign.status,
-      };
-      await setLinkData(env.KV, campaign.campaign_key, kv.slug, kvData);
+    const KV_CHUNK_SIZE = 50;
+    for (let ki = 0; ki < kvWrites.length; ki += KV_CHUNK_SIZE) {
+      const chunk = kvWrites.slice(ki, ki + KV_CHUNK_SIZE);
+      await Promise.all(chunk.map(kv => {
+        const kvData: KvLinkData = {
+          d: campaign.base_url,
+          f: campaign.fallback_url,
+          c: campaignId,
+          t: kv.contactId,
+          l: kv.linkId,
+          e: endAt,
+          s: campaign.status,
+        };
+        return setLinkData(env.KV, campaign.campaign_key, kv.slug, kvData);
+      }));
     }
 
     // Update progress
