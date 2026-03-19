@@ -11,6 +11,7 @@ export interface Env {
   ENVIRONMENT: string;
   SHORT_DOMAIN: string;
   FRONTEND_URL: string;
+  GOOGLE_REDIRECT_URI: string;
   ALLOWED_DOMAIN: string;
   SUPER_ADMIN_EMAIL: string;
 
@@ -26,8 +27,7 @@ export interface Env {
   AT_API_KEY?: string;
   AT_USERNAME?: string;
 
-  // Dev/demo only
-  DEMO_PASSWORD_ENABLED?: string;
+
 }
 
 // ── Roles ──

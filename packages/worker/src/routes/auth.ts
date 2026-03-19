@@ -16,7 +16,7 @@ auth.get('/login', async (c) => {
 
   const params = new URLSearchParams({
     client_id: c.env.GOOGLE_CLIENT_ID,
-    redirect_uri: `${c.env.SHORT_DOMAIN}/api/auth/callback`,
+    redirect_uri: c.env.GOOGLE_REDIRECT_URI,
     response_type: 'code',
     scope: 'openid email profile',
     state,
@@ -58,7 +58,7 @@ auth.get('/callback', async (c) => {
       code,
       client_id: c.env.GOOGLE_CLIENT_ID,
       client_secret: c.env.GOOGLE_CLIENT_SECRET,
-      redirect_uri: `${c.env.SHORT_DOMAIN}/api/auth/callback`,
+      redirect_uri: c.env.GOOGLE_REDIRECT_URI,
       grant_type: 'authorization_code',
     }),
   });
@@ -125,7 +125,7 @@ auth.get('/callback', async (c) => {
     'HttpOnly',
     'SameSite=Lax',
     `Max-Age=1800`,
-    ...(isProduction ? ['Secure'] : []),
+    ...(isProduction ? ['Secure', 'Domain=.cmaf.cc'] : []),
   ].join('; ');
 
   return new Response(null, {
@@ -152,7 +152,7 @@ auth.post('/logout', async (c) => {
   return new Response(JSON.stringify({ ok: true }), {
     headers: {
       'Content-Type': 'application/json',
-      'Set-Cookie': `clide_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${isProduction ? '; Secure' : ''}`,
+      'Set-Cookie': `clide_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${isProduction ? '; Secure; Domain=.cmaf.cc' : ''}`,
     },
   });
 });
@@ -197,14 +197,10 @@ auth.get('/me', async (c) => {
 
 /**
  * POST /api/auth/password-login
- * Password-based login for super admin (dev/emergency access).
- * Only enabled when DEMO_PASSWORD_ENABLED env var is set.
+ * Password-based login for users with a password set.
+ * Google OAuth is the primary auth method; password is a secondary option.
  */
 auth.post('/password-login', async (c) => {
-  if (c.env.DEMO_PASSWORD_ENABLED !== 'true') {
-    return c.json({ error: 'Password login is disabled' }, 403);
-  }
-
   const body = await c.req.json<{ email?: string; password?: string }>();
   if (!body.email || !body.password) {
     return c.json({ error: 'Email and password are required' }, 400);
@@ -222,7 +218,7 @@ auth.post('/password-login', async (c) => {
   // Find user by email
   const user = await c.env.DB.prepare(
     'SELECT * FROM users WHERE email = ?'
-  ).bind(body.email).first<UserRow & { password_hash?: string }>();
+  ).bind(normalizedEmail).first<UserRow & { password_hash?: string }>();
 
   if (!user || !user.password_hash) {
     return c.json({ error: 'Invalid credentials' }, 401);
@@ -230,7 +226,6 @@ auth.post('/password-login', async (c) => {
 
   // Constant-time password comparison using SHA-256
   // bcrypt is not available in Workers, so password_hash stores a hex SHA-256 digest.
-  // The route is gated by DEMO_PASSWORD_ENABLED and intended for dev/demo only.
   const encoder = new TextEncoder();
   const inputHash = await crypto.subtle.digest('SHA-256', encoder.encode(body.password));
   const inputHashHex = Array.from(new Uint8Array(inputHash))
@@ -269,7 +264,7 @@ auth.post('/password-login', async (c) => {
     'HttpOnly',
     'SameSite=Lax',
     `Max-Age=1800`,
-    ...(isProduction ? ['Secure'] : []),
+    ...(isProduction ? ['Secure', 'Domain=.cmaf.cc'] : []),
   ].join('; ');
 
   // Get user's workspaces

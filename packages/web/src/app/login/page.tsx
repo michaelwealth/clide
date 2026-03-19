@@ -101,10 +101,7 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <p
-            className="text-xs text-gray-600 select-none cursor-default"
-            onDoubleClick={() => setShowPasswordForm((v) => !v)}
-          >
+          <p className="text-xs text-gray-600 select-none cursor-default">
             &copy; {new Date().getFullYear()} Commercium Technologies
           </p>
         </div>
@@ -147,9 +144,19 @@ export default function LoginPage() {
           {/* Divider */}
           <div className="flex items-center gap-3 my-6 text-xs text-gray-400">
             <div className="flex-1 h-px bg-gray-200" />
-            <span>Restricted to @commercium.africa</span>
+            <span>or sign in with password</span>
             <div className="flex-1 h-px bg-gray-200" />
           </div>
+
+          {!showPasswordForm && (
+            <button
+              type="button"
+              onClick={() => setShowPasswordForm(true)}
+              className="text-sm text-brand-700 hover:text-brand-800 font-medium"
+            >
+              Sign in with password
+            </button>
+          )}
 
           {/* Trust indicators */}
           <div className="grid grid-cols-3 gap-3 mb-6">
@@ -173,11 +180,18 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {/* Hidden password form */}
+          {/* Password form */}
           {showPasswordForm && (
             <form onSubmit={handlePasswordLogin} className="space-y-3 animate-in">
-              <div className="border-t border-gray-200 pt-5 mb-4">
-                <p className="text-xs font-medium text-gray-500 mb-3">Developer Access</p>
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-gray-500">Password sign-in</p>
+                <button
+                  type="button"
+                  onClick={() => setShowPasswordForm(false)}
+                  className="text-xs text-gray-400 hover:text-gray-600"
+                >
+                  Hide
+                </button>
               </div>
               <div>
                 <label className="label text-xs">Email</label>
@@ -186,7 +200,7 @@ export default function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="input"
-                  placeholder="admin@commercium.africa"
+                  placeholder="you@commercium.africa"
                   required
                   autoComplete="email"
                 />
@@ -214,10 +228,7 @@ export default function LoginPage() {
           )}
 
           {/* Mobile footer */}
-          <p
-            className="mt-8 text-center text-[11px] text-gray-400 select-none cursor-default lg:hidden"
-            onDoubleClick={() => setShowPasswordForm((v) => !v)}
-          >
+          <p className="mt-8 text-center text-[11px] text-gray-400 select-none cursor-default lg:hidden">
             &copy; {new Date().getFullYear()} Commercium Technologies
           </p>
         </div>

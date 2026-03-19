@@ -14,6 +14,7 @@ const campaigns = new Hono<{ Bindings: Env }>();
 campaigns.get('/', async (c) => {
   const { workspace } = c.get('workspace');
   const status = c.req.query('status');
+  const search = c.req.query('q')?.trim() || '';
   const page = Math.max(1, parseInt(c.req.query('page') || '1', 10));
   const limit = Math.min(100, Math.max(1, parseInt(c.req.query('limit') || '20', 10)));
   const offset = (page - 1) * limit;
@@ -26,15 +27,28 @@ campaigns.get('/', async (c) => {
     params.push(status);
   }
 
+  if (search) {
+    const safeSearch = search.replace(/[%_]/g, '\\$&');
+    query += " AND (name LIKE ? ESCAPE '\\' OR campaign_key LIKE ? ESCAPE '\\')";
+    params.push(`%${safeSearch}%`, `%${safeSearch}%`);
+  }
+
   query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
   params.push(limit, offset);
 
   const result = await c.env.DB.prepare(query).bind(...params).all<CampaignRow>();
 
-  const countQuery = status
-    ? 'SELECT COUNT(*) as total FROM campaigns WHERE workspace_id = ? AND status = ?'
-    : 'SELECT COUNT(*) as total FROM campaigns WHERE workspace_id = ?';
-  const countParams = status ? [workspace.id, status] : [workspace.id];
+  let countQuery = 'SELECT COUNT(*) as total FROM campaigns WHERE workspace_id = ?';
+  const countParams: unknown[] = [workspace.id];
+  if (status) {
+    countQuery += ' AND status = ?';
+    countParams.push(status);
+  }
+  if (search) {
+    const safeSearch = search.replace(/[%_]/g, '\\$&');
+    countQuery += " AND (name LIKE ? ESCAPE '\\' OR campaign_key LIKE ? ESCAPE '\\')";
+    countParams.push(`%${safeSearch}%`, `%${safeSearch}%`);
+  }
   const total = await c.env.DB.prepare(countQuery).bind(...countParams).first<{ total: number }>();
 
   return c.json({
@@ -173,10 +187,6 @@ campaigns.put('/:campaignId', requireRole('operator'), async (c) => {
     return c.json({ error: 'Campaign not found' }, 404);
   }
 
-  if (!['draft', 'scheduled'].includes(campaign.status)) {
-    return c.json({ error: 'Can only edit draft or scheduled campaigns' }, 400);
-  }
-
   const body = await c.req.json<{
     name?: string;
     base_url?: string;
@@ -185,6 +195,17 @@ campaigns.put('/:campaignId', requireRole('operator'), async (c) => {
     start_at?: string;
     end_at?: string;
   }>();
+
+  // For active/paused campaigns, only allow editing dates and fallback_url
+  const isLimited = ['active', 'paused'].includes(campaign.status);
+  if (isLimited) {
+    const hasBlockedFields = body.name !== undefined || body.base_url !== undefined || body.sms_template !== undefined;
+    if (hasBlockedFields) {
+      return c.json({ error: 'Active/paused campaigns can only update dates and fallback URL' }, 400);
+    }
+  } else if (!['draft', 'scheduled'].includes(campaign.status)) {
+    return c.json({ error: 'Expired campaigns cannot be edited' }, 400);
+  }
 
   if (body.base_url) {
     try { new URL(body.base_url); } catch { return c.json({ error: 'Invalid base_url' }, 400); }

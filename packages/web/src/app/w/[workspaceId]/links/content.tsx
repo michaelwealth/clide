@@ -24,16 +24,30 @@ export default function LinksContent() {
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
+  const [selectedLink, setSelectedLink] = useState<ShortLink | null>(null);
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
 
   // Form state
   const [formUrl, setFormUrl] = useState('');
   const [formTitle, setFormTitle] = useState('');
   const [formSlug, setFormSlug] = useState('');
+  const [useUtm, setUseUtm] = useState(false);
+  const [utmSource, setUtmSource] = useState('');
+  const [utmMedium, setUtmMedium] = useState('');
+  const [utmCampaign, setUtmCampaign] = useState('');
+  const [utmTerm, setUtmTerm] = useState('');
+  const [utmContent, setUtmContent] = useState('');
 
   const fetchLinks = useCallback(async (page = 1) => {
     try {
       setLoading(true);
-      const res = await api.links.list(workspaceId, { page: String(page), limit: '50' });
+      const res = await api.links.list(workspaceId, {
+        page: String(page),
+        limit: '50',
+        ...(search ? { q: search } : {}),
+      });
       setLinks(res.links);
       setPagination(res.pagination);
     } catch {
@@ -41,7 +55,7 @@ export default function LinksContent() {
     } finally {
       setLoading(false);
     }
-  }, [workspaceId]);
+  }, [workspaceId, search]);
 
   useEffect(() => { fetchLinks(); }, [fetchLinks]);
 
@@ -50,14 +64,28 @@ export default function LinksContent() {
     setCreating(true);
     setError('');
     try {
+      const finalUrl = buildUrlWithUtm(formUrl, {
+        source: utmSource,
+        medium: utmMedium,
+        campaign: utmCampaign,
+        term: utmTerm,
+        content: utmContent,
+      }, useUtm);
+
       await api.links.create(workspaceId, {
-        url: formUrl,
+        url: finalUrl,
         title: formTitle || undefined,
         slug: formSlug || undefined,
       });
       setFormUrl('');
       setFormTitle('');
       setFormSlug('');
+      setUseUtm(false);
+      setUtmSource('');
+      setUtmMedium('');
+      setUtmCampaign('');
+      setUtmTerm('');
+      setUtmContent('');
       setShowCreate(false);
       await fetchLinks();
     } catch (err: any) {
@@ -86,6 +114,57 @@ export default function LinksContent() {
     }
   };
 
+  const openLinkActions = (link: ShortLink) => {
+    setSelectedLink(link);
+    setShowLinkModal(true);
+  };
+
+  const copyShortUrl = async (slug: string) => {
+    try {
+      await navigator.clipboard.writeText(`https://s.cmaf.cc/${slug}`);
+    } catch {
+      setError('Failed to copy link');
+    }
+  };
+
+  const downloadQr = async (slug: string) => {
+    try {
+      const shortUrl = `https://s.cmaf.cc/${slug}`;
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=600x600&data=${encodeURIComponent(shortUrl)}`;
+
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('Could not generate QR code'));
+        img.src = qrUrl;
+      });
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 700;
+      canvas.height = 820;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas not available');
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 50, 40, 600, 600);
+
+      ctx.fillStyle = '#111827';
+      ctx.font = '24px Manrope, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(shortUrl, canvas.width / 2, 700);
+
+      const dataUrl = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `${slug}-qr.png`;
+      a.click();
+    } catch (err: any) {
+      setError(err?.message || 'Failed to download QR code');
+    }
+  };
+
   return (
     <div>
       {/* Header */}
@@ -108,6 +187,15 @@ export default function LinksContent() {
         <div className="mb-4 px-4 py-3 rounded-lg bg-red-50 text-red-700 text-sm">{error}</div>
       )}
 
+      <div className="mb-4">
+        <input
+          className="input w-full sm:w-80"
+          placeholder="Search slug, destination URL, or name..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+
       {/* Create form */}
       {showCreate && (
         <div className="card p-5 mb-6">
@@ -129,13 +217,13 @@ export default function LinksContent() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="label text-xs">Title (optional)</label>
+                <label className="label text-xs">Name (optional)</label>
                 <input
                   type="text"
                   value={formTitle}
                   onChange={e => setFormTitle(e.target.value)}
                   className="input"
-                  placeholder="My Link"
+                  placeholder="Spring Promo Landing Page"
                 />
               </div>
               <div>
@@ -153,6 +241,28 @@ export default function LinksContent() {
                 />
               </div>
             </div>
+
+            <div className="border rounded-lg border-gray-200 p-3">
+              <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700 mb-3">
+                <input
+                  type="checkbox"
+                  checked={useUtm}
+                  onChange={(e) => setUseUtm(e.target.checked)}
+                />
+                Enable detailed UTM generator
+              </label>
+
+              {useUtm && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <input className="input" placeholder="utm_source (e.g. whatsapp)" value={utmSource} onChange={(e) => setUtmSource(e.target.value)} />
+                  <input className="input" placeholder="utm_medium (e.g. sms)" value={utmMedium} onChange={(e) => setUtmMedium(e.target.value)} />
+                  <input className="input" placeholder="utm_campaign (e.g. march_launch)" value={utmCampaign} onChange={(e) => setUtmCampaign(e.target.value)} />
+                  <input className="input" placeholder="utm_term (optional)" value={utmTerm} onChange={(e) => setUtmTerm(e.target.value)} />
+                  <input className="input sm:col-span-2" placeholder="utm_content (optional)" value={utmContent} onChange={(e) => setUtmContent(e.target.value)} />
+                </div>
+              )}
+            </div>
+
             <div className="flex gap-2 pt-2">
               <button type="submit" disabled={creating} className="btn-primary text-sm">
                 {creating ? 'Creating…' : 'Create Link'}
@@ -209,7 +319,12 @@ export default function LinksContent() {
                 <tr key={link.id} className="hover:bg-gray-50/50">
                   <td className="px-4 py-3">
                     <div>
-                      <span className="font-mono text-brand-600 font-medium">/{link.slug}</span>
+                      <button
+                        onClick={() => openLinkActions(link)}
+                        className="font-mono text-brand-600 font-medium hover:underline"
+                      >
+                        https://s.cmaf.cc/{link.slug}
+                      </button>
                       {link.title && (
                         <p className="text-xs text-gray-400 mt-0.5">{link.title}</p>
                       )}
@@ -233,12 +348,20 @@ export default function LinksContent() {
                     {new Date(link.created_at).toLocaleDateString()}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => handleDelete(link.id)}
-                      className="text-red-500 hover:text-red-700 text-xs font-medium"
-                    >
-                      Delete
-                    </button>
+                    <div className="inline-flex items-center gap-3">
+                      <button
+                        onClick={() => downloadQr(link.slug)}
+                        className="text-brand-600 hover:text-brand-800 text-xs font-medium"
+                      >
+                        Download QR
+                      </button>
+                      <button
+                        onClick={() => handleDelete(link.id)}
+                        className="text-red-500 hover:text-red-700 text-xs font-medium"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -269,6 +392,137 @@ export default function LinksContent() {
           </button>
         </div>
       )}
+
+      {showLinkModal && selectedLink && (
+        <ActionModal title="Short Link Actions" onClose={() => setShowLinkModal(false)}>
+          <p className="text-xs text-gray-500 mb-2">Selected short link</p>
+          <p className="font-mono text-sm text-brand-700 break-all mb-4">https://s.cmaf.cc/{selectedLink.slug}</p>
+          <div className="grid grid-cols-1 gap-2">
+            <a
+              href={`https://s.cmaf.cc/${selectedLink.slug}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-secondary text-sm"
+            >
+              Visit Link
+            </a>
+            <button
+              onClick={() => copyShortUrl(selectedLink.slug)}
+              className="btn-secondary text-sm"
+            >
+              Copy Link
+            </button>
+            <button
+              onClick={() => {
+                setShowLinkModal(false);
+                setShowEditModal(true);
+              }}
+              className="btn-primary text-sm"
+            >
+              Edit Link
+            </button>
+          </div>
+        </ActionModal>
+      )}
+
+      {showEditModal && selectedLink && (
+        <EditLinkModal
+          link={selectedLink}
+          onClose={() => setShowEditModal(false)}
+          onSaved={async () => {
+            setShowEditModal(false);
+            await fetchLinks(pagination.page);
+          }}
+          onSave={async (payload) => {
+            await api.links.update(workspaceId, selectedLink.id, payload);
+          }}
+        />
+      )}
     </div>
   );
+}
+
+function ActionModal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={onClose}>
+      <div className="card w-full max-w-md mx-4 p-6" onClick={(e) => e.stopPropagation()}>
+        <h2 className="font-display text-lg font-semibold mb-4">{title}</h2>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function EditLinkModal({
+  link,
+  onClose,
+  onSaved,
+  onSave,
+}: {
+  link: ShortLink;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+  onSave: (payload: { destination_url: string; title?: string; is_active: boolean }) => Promise<void>;
+}) {
+  const [destinationUrl, setDestinationUrl] = useState(link.destination_url);
+  const [title, setTitle] = useState(link.title || '');
+  const [isActive, setIsActive] = useState(!!link.is_active);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const save = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      await onSave({ destination_url: destinationUrl, title: title || undefined, is_active: isActive });
+      await onSaved();
+    } catch (err: any) {
+      setError(err?.message || 'Failed to save link');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ActionModal title="Edit Short Link" onClose={onClose}>
+      {error && <div className="mb-3 p-2 bg-red-50 text-red-700 rounded text-sm">{error}</div>}
+      <div className="space-y-3">
+        <div>
+          <label className="label text-xs">Short URL</label>
+          <p className="text-xs font-mono text-brand-700">https://s.cmaf.cc/{link.slug}</p>
+        </div>
+        <div>
+          <label className="label text-xs">Destination URL</label>
+          <input className="input" type="url" value={destinationUrl} onChange={(e) => setDestinationUrl(e.target.value)} />
+        </div>
+        <div>
+          <label className="label text-xs">Name</label>
+          <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} />
+        </div>
+        <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+          <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
+          Link is active
+        </label>
+      </div>
+      <div className="flex justify-end gap-2 mt-4">
+        <button onClick={onClose} className="btn-secondary text-sm">Cancel</button>
+        <button onClick={save} disabled={saving} className="btn-primary text-sm">{saving ? 'Saving...' : 'Save'}</button>
+      </div>
+    </ActionModal>
+  );
+}
+
+function buildUrlWithUtm(
+  baseUrl: string,
+  utm: { source: string; medium: string; campaign: string; term: string; content: string },
+  enabled: boolean,
+): string {
+  if (!enabled) return baseUrl;
+  const url = new URL(baseUrl);
+  if (utm.source) url.searchParams.set('utm_source', utm.source);
+  if (utm.medium) url.searchParams.set('utm_medium', utm.medium);
+  if (utm.campaign) url.searchParams.set('utm_campaign', utm.campaign);
+  if (utm.term) url.searchParams.set('utm_term', utm.term);
+  if (utm.content) url.searchParams.set('utm_content', utm.content);
+  return url.toString();
 }

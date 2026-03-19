@@ -10,6 +10,7 @@ export default function AdminUsersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showInvite, setShowInvite] = useState(false);
+  const [search, setSearch] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -34,6 +35,12 @@ export default function AdminUsersPage() {
     }
   };
 
+  const filteredUsers = users.filter((u: any) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return (u.name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q);
+  });
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -44,6 +51,15 @@ export default function AdminUsersPage() {
       </div>
 
       {error && <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>}
+
+      <div className="mb-4">
+        <input
+          className="input w-full sm:w-80"
+          placeholder="Search users by name or email..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
 
       <div className="card overflow-hidden">
         <table className="w-full text-sm">
@@ -63,8 +79,8 @@ export default function AdminUsersPage() {
                   <td colSpan={5} className="px-4 py-3"><div className="h-4 bg-gray-100 rounded animate-pulse" /></td>
                 </tr>
               ))
-            ) : users.length ? (
-              users.map((u: any) => (
+            ) : filteredUsers.length ? (
+              filteredUsers.map((u: any) => (
                 <tr key={u.id} className="hover:bg-gray-50/50">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">

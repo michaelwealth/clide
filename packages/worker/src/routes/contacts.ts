@@ -160,6 +160,8 @@ contacts.post('/upload', requireRole('operator'), async (c) => {
   const formData = await c.req.formData();
   const file = formData.get('file') as File | null;
   const mappingStr = formData.get('field_mapping') as string | null;
+  const duplicateModeRaw = (formData.get('duplicate_mode') as string | null) || 'keep';
+  const duplicateMode = duplicateModeRaw === 'replace' ? 'replace' : 'keep';
 
   if (!file) {
     return c.json({ error: 'CSV file is required' }, 400);
@@ -198,13 +200,32 @@ contacts.post('/upload', requireRole('operator'), async (c) => {
     return c.json({ error: 'CSV file is empty' }, 400);
   }
 
+  // Pack mapping + upload metadata into field_mapping for queue processor.
+  let packedFieldMapping: string | null = null;
+  if (mappingStr) {
+    try {
+      const parsed = JSON.parse(mappingStr);
+      packedFieldMapping = JSON.stringify({
+        mapping: parsed,
+        __meta: { duplicate_mode: duplicateMode },
+      });
+    } catch {
+      return c.json({ error: 'Invalid field_mapping JSON' }, 400);
+    }
+  } else {
+    packedFieldMapping = JSON.stringify({
+      mapping: null,
+      __meta: { duplicate_mode: duplicateMode },
+    });
+  }
+
   // Create upload record
   await c.env.DB.prepare(`
     INSERT INTO csv_uploads (id, campaign_id, workspace_id, r2_key, filename, row_count, field_mapping, uploaded_by)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     uploadId, campaignId, workspace.id, r2Key,
-    file.name, rowCount, mappingStr || null, user.id
+    file.name, rowCount, packedFieldMapping, user.id
   ).run();
 
   // Enqueue for processing

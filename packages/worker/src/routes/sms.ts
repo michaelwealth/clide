@@ -76,6 +76,7 @@ sms.post('/send', requireRole('admin'), async (c) => {
   }
 
   const shortBase = c.env.SHORT_DOMAIN;
+  const requiresLink = /\{link\}/.test(campaign.sms_template || '');
   let queued = 0;
   let skipped = 0;
   const queueMessages: SmsDispatchMessage[] = [];
@@ -87,12 +88,14 @@ sms.post('/send', requireRole('admin'), async (c) => {
       continue;
     }
 
-    if (!contact.slug) {
+    if (requiresLink && !contact.slug) {
       skipped++;
       continue;
     }
 
-    const shortLink = `${shortBase}/${campaign.campaign_key}/${contact.slug}`;
+    const shortLink = contact.slug
+      ? `${shortBase}/${campaign.campaign_key}/${contact.slug}`
+      : '';
 
     // Build idempotency key: campaign + contact + type
     const idempotencyKey = `sms:${campaignId}:${contact.id}:campaign`;

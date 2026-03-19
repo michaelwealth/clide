@@ -87,11 +87,12 @@ export const api = {
 
   // ── Campaigns ──
   campaigns: {
-    list: (wid: string, params?: { status?: string; page?: number; limit?: number }) => {
+    list: (wid: string, params?: { status?: string; page?: number; limit?: number; q?: string }) => {
       const qs = new URLSearchParams();
       if (params?.status) qs.set('status', params.status);
       if (params?.page) qs.set('page', String(params.page));
       if (params?.limit) qs.set('limit', String(params.limit));
+      if (params?.q) qs.set('q', params.q);
       return request<{ campaigns: any[]; pagination: any }>(`/api/workspaces/${wid}/campaigns?${qs}`);
     },
     create: (wid: string, data: any) =>
@@ -122,12 +123,19 @@ export const api = {
         `/api/workspaces/${wid}/campaigns/${cid}/contacts?${qs}`
       );
     },
-    upload: async (wid: string, cid: string, file: File, fieldMapping?: Record<string, string>) => {
+    upload: async (
+      wid: string,
+      cid: string,
+      file: File,
+      fieldMapping?: Record<string, string>,
+      duplicateMode: 'keep' | 'replace' = 'keep'
+    ) => {
       const formData = new FormData();
       formData.append('file', file);
       if (fieldMapping) {
         formData.append('field_mapping', JSON.stringify(fieldMapping));
       }
+      formData.append('duplicate_mode', duplicateMode);
       const url = `${API_URL}/api/workspaces/${wid}/campaigns/${cid}/contacts/upload`;
       const res = await fetch(url, {
         method: 'POST',
@@ -188,7 +196,7 @@ export const api = {
   // ── Short Links ──
   links: {
     list: (wid: string, params?: Record<string, string>) => {
-      const qs = new URLSearchParams(params);
+      const qs = new URLSearchParams(params || {});
       return request<{ links: any[]; pagination: any }>(`/api/workspaces/${wid}/links?${qs}`);
     },
     create: (wid: string, data: { url: string; title?: string; slug?: string; expires_at?: string }) =>

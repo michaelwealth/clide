@@ -10,6 +10,7 @@ export default function AdminWorkspacesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [search, setSearch] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -24,6 +25,12 @@ export default function AdminWorkspacesPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  const filteredWorkspaces = workspaces.filter((ws: any) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return (ws.name || '').toLowerCase().includes(q) || (ws.slug || '').toLowerCase().includes(q);
+  });
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -34,6 +41,15 @@ export default function AdminWorkspacesPage() {
       </div>
 
       {error && <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>}
+
+      <div className="mb-4">
+        <input
+          className="input w-full sm:w-80"
+          placeholder="Search workspaces by name or slug..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
 
       <div className="card overflow-hidden">
         <table className="w-full text-sm">
@@ -53,8 +69,8 @@ export default function AdminWorkspacesPage() {
                   <td colSpan={5} className="px-4 py-3"><div className="h-4 bg-gray-100 rounded animate-pulse" /></td>
                 </tr>
               ))
-            ) : workspaces.length ? (
-              workspaces.map((ws: any) => (
+            ) : filteredWorkspaces.length ? (
+              filteredWorkspaces.map((ws: any) => (
                 <tr key={ws.id} className="hover:bg-gray-50/50">
                   <td className="px-4 py-3 font-medium text-gray-900">{ws.name}</td>
                   <td className="px-4 py-3 text-gray-500 font-mono text-xs">{ws.slug}</td>

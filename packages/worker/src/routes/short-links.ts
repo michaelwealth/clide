@@ -11,17 +11,30 @@ const shortLinks = new Hono<{ Bindings: Env }>();
  */
 shortLinks.get('/', async (c) => {
   const { workspace } = c.get('workspace');
+  const search = c.req.query('q')?.trim() || '';
   const page = Math.max(1, parseInt(c.req.query('page') || '1', 10));
   const limit = Math.min(100, Math.max(1, parseInt(c.req.query('limit') || '50', 10)));
   const offset = (page - 1) * limit;
 
+  let listQuery = 'SELECT * FROM short_links WHERE workspace_id = ?';
+  let countQuery = 'SELECT COUNT(*) as count FROM short_links WHERE workspace_id = ?';
+  const listParams: unknown[] = [workspace.id];
+  const countParams: unknown[] = [workspace.id];
+
+  if (search) {
+    const safeSearch = search.replace(/[%_]/g, '\\$&');
+    listQuery += " AND (slug LIKE ? ESCAPE '\\' OR destination_url LIKE ? ESCAPE '\\' OR COALESCE(title, '') LIKE ? ESCAPE '\\')";
+    countQuery += " AND (slug LIKE ? ESCAPE '\\' OR destination_url LIKE ? ESCAPE '\\' OR COALESCE(title, '') LIKE ? ESCAPE '\\')";
+    listParams.push(`%${safeSearch}%`, `%${safeSearch}%`, `%${safeSearch}%`);
+    countParams.push(`%${safeSearch}%`, `%${safeSearch}%`, `%${safeSearch}%`);
+  }
+
+  listQuery += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+  listParams.push(limit, offset);
+
   const [links, countResult] = await Promise.all([
-    c.env.DB.prepare(
-      'SELECT * FROM short_links WHERE workspace_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?'
-    ).bind(workspace.id, limit, offset).all<ShortLinkRow>(),
-    c.env.DB.prepare(
-      'SELECT COUNT(*) as count FROM short_links WHERE workspace_id = ?'
-    ).bind(workspace.id).first<{ count: number }>(),
+    c.env.DB.prepare(listQuery).bind(...listParams).all<ShortLinkRow>(),
+    c.env.DB.prepare(countQuery).bind(...countParams).first<{ count: number }>(),
   ]);
 
   return c.json({

@@ -22,6 +22,7 @@ export default function CampaignsContent() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
+  const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
@@ -37,14 +38,17 @@ export default function CampaignsContent() {
   const loadCampaigns = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await api.campaigns.list(workspaceId, { status: statusFilter || undefined });
+      const data = await api.campaigns.list(workspaceId, {
+        status: statusFilter || undefined,
+        q: search || undefined,
+      });
       setCampaigns(data.campaigns);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, statusFilter]);
+  }, [workspaceId, statusFilter, search]);
 
   useEffect(() => { loadCampaigns(); }, [loadCampaigns]);
 
@@ -79,7 +83,13 @@ export default function CampaignsContent() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-2 mb-4">
+      <div className="flex flex-wrap gap-2 mb-4 items-center">
+        <input
+          className="input w-64"
+          placeholder="Search campaign name or key..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
         {['', 'draft', 'scheduled', 'active', 'paused', 'expired'].map(s => (
           <button
             key={s}

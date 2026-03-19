@@ -52,10 +52,18 @@ export async function processCsvUpload(
   // Parse header
   const header = parseCSVLine(lines[0]).map(h => h.toLowerCase().trim());
 
-  // Determine field mapping
+  // Determine field mapping + upload metadata
   let mapping: Record<string, string> = {};
+  let duplicateMode: 'keep' | 'replace' = 'keep';
   if (upload.field_mapping) {
-    mapping = JSON.parse(upload.field_mapping);
+    const parsed = JSON.parse(upload.field_mapping);
+    if (parsed && typeof parsed === 'object' && ('mapping' in parsed || '__meta' in parsed)) {
+      mapping = (parsed.mapping || {}) as Record<string, string>;
+      const rawMode = parsed.__meta?.duplicate_mode;
+      duplicateMode = rawMode === 'replace' ? 'replace' : 'keep';
+    } else {
+      mapping = parsed as Record<string, string>;
+    }
   } else {
     // Auto-detect: find firstname and phone columns
     for (const col of header) {
@@ -80,12 +88,22 @@ export async function processCsvUpload(
 
   const existingSlugs = new Set(existingSlugsResult.results.map(r => r.slug));
 
-  // Get existing phones for dedup
-  const existingPhonesResult = await env.DB.prepare(
-    'SELECT phone FROM contacts WHERE campaign_id = ?'
-  ).bind(campaignId).all<{ phone: string }>();
+  // Existing contacts + links by phone for dedup/replace behavior.
+  const existingContactsResult = await env.DB.prepare(`
+    SELECT c.id as contact_id, c.phone, l.id as link_id, l.slug
+    FROM contacts c
+    LEFT JOIN links l ON l.contact_id = c.id AND l.campaign_id = c.campaign_id
+    WHERE c.campaign_id = ?
+  `).bind(campaignId).all<{ contact_id: string; phone: string; link_id: string | null; slug: string | null }>();
 
-  const existingPhones = new Set(existingPhonesResult.results.map(r => r.phone));
+  const existingByPhone = new Map<string, { contactId: string; linkId: string | null; slug: string | null }>();
+  for (const row of existingContactsResult.results) {
+    existingByPhone.set(row.phone, {
+      contactId: row.contact_id,
+      linkId: row.link_id,
+      slug: row.slug,
+    });
+  }
 
   let processed = 0;
   let failed = 0;
@@ -122,12 +140,11 @@ export async function processCsvUpload(
           continue;
         }
 
-        // Dedup by phone
-        if (existingPhones.has(phone)) {
-          failed++; // Count as skipped
+        const existing = existingByPhone.get(phone);
+        if (existing && duplicateMode === 'keep') {
+          failed++; // skipped duplicate
           continue;
         }
-        existingPhones.add(phone);
 
         // Build extra data from remaining columns
         const extraData: Record<string, string> = {};
@@ -143,10 +160,19 @@ export async function processCsvUpload(
           }
         }
 
-        const contactId = generateId();
-        const linkId = generateId();
-        const slug = await generateUniqueSlug(firstname, existingSlugs);
-        existingSlugs.add(slug);
+        let contactId = generateId();
+        let linkId = generateId();
+        let slug = await generateUniqueSlug(firstname, existingSlugs);
+
+        if (existing) {
+          contactId = existing.contactId;
+          if (existing.linkId && existing.slug) {
+            linkId = existing.linkId;
+            slug = existing.slug;
+          }
+        } else {
+          existingSlugs.add(slug);
+        }
 
         // Interpolate URL parameters: {column_name} → contact's CSV value
         const urlVariables: Record<string, string> = {
@@ -157,24 +183,58 @@ export async function processCsvUpload(
         };
         const destinationUrl = interpolateTemplate(campaign.base_url, urlVariables);
 
-        // Insert contact
-        dbStatements.push(
-          env.DB.prepare(`
-            INSERT INTO contacts (id, campaign_id, workspace_id, firstname, phone, extra_data)
-            VALUES (?, ?, ?, ?, ?, ?)
-          `).bind(
-            contactId, campaignId, workspaceId, firstname, phone,
-            Object.keys(extraData).length > 0 ? JSON.stringify(extraData) : null
-          )
-        );
+        if (existing) {
+          // Replace mode: update existing contact and existing link destination.
+          dbStatements.push(
+            env.DB.prepare(`
+              UPDATE contacts
+              SET firstname = ?, extra_data = ?
+              WHERE id = ? AND campaign_id = ?
+            `).bind(
+              firstname,
+              Object.keys(extraData).length > 0 ? JSON.stringify(extraData) : null,
+              contactId,
+              campaignId
+            )
+          );
 
-        // Insert link
-        dbStatements.push(
-          env.DB.prepare(`
-            INSERT INTO links (id, campaign_id, contact_id, slug, destination_url)
-            VALUES (?, ?, ?, ?, ?)
-          `).bind(linkId, campaignId, contactId, slug, destinationUrl)
-        );
+          if (existing.linkId) {
+            dbStatements.push(
+              env.DB.prepare(`
+                UPDATE links
+                SET destination_url = ?
+                WHERE id = ? AND campaign_id = ?
+              `).bind(destinationUrl, existing.linkId, campaignId)
+            );
+          } else {
+            dbStatements.push(
+              env.DB.prepare(`
+                INSERT INTO links (id, campaign_id, contact_id, slug, destination_url)
+                VALUES (?, ?, ?, ?, ?)
+              `).bind(linkId, campaignId, contactId, slug, destinationUrl)
+            );
+            existingByPhone.set(phone, { contactId, linkId, slug });
+          }
+        } else {
+          // New contact + link
+          dbStatements.push(
+            env.DB.prepare(`
+              INSERT INTO contacts (id, campaign_id, workspace_id, firstname, phone, extra_data)
+              VALUES (?, ?, ?, ?, ?, ?)
+            `).bind(
+              contactId, campaignId, workspaceId, firstname, phone,
+              Object.keys(extraData).length > 0 ? JSON.stringify(extraData) : null
+            )
+          );
+
+          dbStatements.push(
+            env.DB.prepare(`
+              INSERT INTO links (id, campaign_id, contact_id, slug, destination_url)
+              VALUES (?, ?, ?, ?, ?)
+            `).bind(linkId, campaignId, contactId, slug, destinationUrl)
+          );
+          existingByPhone.set(phone, { contactId, linkId, slug });
+        }
 
         kvWrites.push({
           key: `${campaign.campaign_key}/${slug}`,

@@ -18,6 +18,7 @@ export default function CampaignDetailClient() {
   const [showSmsConfirm, setShowSmsConfirm] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [showTriggerForm, setShowTriggerForm] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -218,6 +219,9 @@ export default function CampaignDetailClient() {
         <button onClick={() => setShowUpload(true)} className="btn-secondary">
           Upload CSV
         </button>
+        <button onClick={() => setShowEdit(true)} className="btn-secondary">
+          Edit Campaign
+        </button>
         <button onClick={() => setShowTriggerForm(true)} className="btn-secondary">
           + Add Trigger
         </button>
@@ -275,6 +279,16 @@ export default function CampaignDetailClient() {
         />
       )}
 
+      {/* Edit Campaign Modal */}
+      {showEdit && (
+        <EditCampaignModal
+          workspaceId={workspaceId}
+          campaignId={campaignId}
+          campaign={campaign}
+          onClose={() => { setShowEdit(false); load(); }}
+        />
+      )}
+
       {/* Trigger Form Modal */}
       {showTriggerForm && (
         <TriggerFormModal
@@ -306,6 +320,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 
 function UploadModal({ workspaceId, campaignId, onClose }: { workspaceId: string; campaignId: string; onClose: () => void }) {
   const [file, setFile] = useState<File | null>(null);
+  const [duplicateMode, setDuplicateMode] = useState<'keep' | 'replace'>('keep');
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -332,7 +347,7 @@ function UploadModal({ workspaceId, campaignId, onClose }: { workspaceId: string
     setUploading(true);
     setError('');
     try {
-      const result = await api.contacts.upload(workspaceId, campaignId, file);
+      const result = await api.contacts.upload(workspaceId, campaignId, file, undefined, duplicateMode);
       setSuccess(`Upload started: ${result.upload.row_count} rows queued for processing`);
       setTimeout(onClose, 2000);
     } catch (err) {
@@ -370,6 +385,21 @@ function UploadModal({ workspaceId, campaignId, onClose }: { workspaceId: string
           onChange={e => handleFileChange(e.target.files?.[0] || null)}
           className="input"
         />
+      </div>
+
+      <div className="mb-4">
+        <label className="label">If a contact phone already exists</label>
+        <select
+          className="input"
+          value={duplicateMode}
+          onChange={(e) => setDuplicateMode(e.target.value as 'keep' | 'replace')}
+        >
+          <option value="keep">Keep existing contact data (skip duplicate rows)</option>
+          <option value="replace">Replace existing contact data with CSV values</option>
+        </select>
+        <p className="text-xs text-gray-400 mt-1">
+          New contacts are always imported. This setting only affects rows with phone numbers already in this campaign.
+        </p>
       </div>
 
       {preview.length > 0 && (
@@ -473,6 +503,99 @@ function TriggerFormModal({ workspaceId, campaignId, onClose }: { workspaceId: s
         <button onClick={onClose} className="btn-secondary">Cancel</button>
         <button onClick={save} disabled={saving || !form.message_template} className="btn-primary">
           {saving ? 'Creating…' : 'Create Trigger'}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function EditCampaignModal({ workspaceId, campaignId, campaign, onClose }: {
+  workspaceId: string;
+  campaignId: string;
+  campaign: any;
+  onClose: () => void;
+}) {
+  const isLimited = ['active', 'paused'].includes(campaign.status);
+  const [form, setForm] = useState({
+    name: campaign.name || '',
+    base_url: campaign.base_url || '',
+    fallback_url: campaign.fallback_url || '',
+    sms_template: campaign.sms_template || '',
+    start_at: campaign.start_at ? campaign.start_at.slice(0, 16) : '',
+    end_at: campaign.end_at ? campaign.end_at.slice(0, 16) : '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const save = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      const payload: any = {
+        fallback_url: form.fallback_url,
+        start_at: form.start_at || null,
+        end_at: form.end_at || null,
+      };
+      if (!isLimited) {
+        payload.name = form.name;
+        payload.base_url = form.base_url;
+        payload.sms_template = form.sms_template;
+      }
+      await api.campaigns.update(workspaceId, campaignId, payload);
+      onClose();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to update');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title="Edit Campaign" onClose={onClose}>
+      {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
+      {isLimited && (
+        <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded p-2 mb-4">
+          This campaign is {campaign.status}. Only dates and fallback URL can be edited.
+        </p>
+      )}
+      <div className="space-y-4">
+        <div>
+          <label className="label">Campaign Name</label>
+          <input className="input" value={form.name} disabled={isLimited}
+            onChange={e => setForm({ ...form, name: e.target.value })} />
+        </div>
+        <div>
+          <label className="label">Destination URL</label>
+          <input className="input" type="url" value={form.base_url} disabled={isLimited}
+            onChange={e => setForm({ ...form, base_url: e.target.value })} />
+        </div>
+        <div>
+          <label className="label">Fallback URL</label>
+          <input className="input" type="url" value={form.fallback_url}
+            onChange={e => setForm({ ...form, fallback_url: e.target.value })} />
+        </div>
+        <div>
+          <label className="label">SMS Template</label>
+          <textarea className="input min-h-[60px]" value={form.sms_template} disabled={isLimited}
+            onChange={e => setForm({ ...form, sms_template: e.target.value })} />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="label">Start Date</label>
+            <input className="input" type="datetime-local" value={form.start_at}
+              onChange={e => setForm({ ...form, start_at: e.target.value })} />
+          </div>
+          <div>
+            <label className="label">End Date</label>
+            <input className="input" type="datetime-local" value={form.end_at}
+              onChange={e => setForm({ ...form, end_at: e.target.value })} />
+          </div>
+        </div>
+      </div>
+      <div className="flex justify-end gap-3 mt-6">
+        <button onClick={onClose} className="btn-secondary">Cancel</button>
+        <button onClick={save} disabled={saving} className="btn-primary">
+          {saving ? 'Saving…' : 'Save Changes'}
         </button>
       </div>
     </Modal>

@@ -66,9 +66,16 @@ crons = [
 
 # ── Environment Variables ──
 [vars]
-ENVIRONMENT = "development"
-SHORT_DOMAIN = "http://localhost:8787"
-FRONTEND_URL = "http://localhost:3000"
+#ENVIRONMENT = "development"
+#SHORT_DOMAIN = "http://localhost:8787"
+#FRONTEND_URL = "http://localhost:3000"
+#ALLOWED_DOMAIN = "commercium.africa"
+#SUPER_ADMIN_EMAIL = "michael@commercium.africa"
+
+ENVIRONMENT = "production"
+FRONTEND_URL = "https://app.cmaf.cc"
+SHORT_DOMAIN = "https://s.cmaf.cc"
+GOOGLE_REDIRECT_URI = "https://api.cmaf.cc/api/auth/callback"
 ALLOWED_DOMAIN = "commercium.africa"
 SUPER_ADMIN_EMAIL = "michael@commercium.africa"
 
