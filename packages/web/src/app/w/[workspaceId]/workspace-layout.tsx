@@ -21,6 +21,7 @@ const navItems = [
   { label: 'Dashboard', href: '/dashboard', icon: DashboardIcon, tip: 'Overview of workspace stats, campaigns, and SMS delivery' },
   { label: 'Campaigns', href: '/campaigns', icon: CampaignsIcon, tip: 'Create and manage link campaigns with SMS dispatch' },
   { label: 'Links', href: '/links', icon: LinksIcon, tip: 'Create and manage standalone short links' },
+  { label: 'Docs', href: '/docs', icon: DocsIcon, tip: 'Help guides and platform documentation', absolute: true },
   { label: 'Settings', href: '/settings', icon: SettingsIcon, tip: 'Configure workspace name, members, and SMS providers' },
 ];
 
@@ -158,7 +159,7 @@ export default function WorkspaceLayoutClient({ children }: { children: ReactNod
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {navItems.map(item => {
-            const href = `${basePath}${item.href}`;
+            const href = item.absolute ? item.href : `${basePath}${item.href}`;
             const isActive = pathname.startsWith(href);
             return (
               <Link
@@ -340,6 +341,14 @@ function LinksIcon({ active }: { active: boolean }) {
   return (
     <svg className={`w-5 h-5 ${active ? 'text-brand-600' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m9.86-2.74a4.5 4.5 0 00-1.242-7.244l-4.5-4.5a4.5 4.5 0 00-6.364 6.364L4.34 8.374" />
+    </svg>
+  );
+}
+
+function DocsIcon({ active }: { active: boolean }) {
+  return (
+    <svg className={`w-5 h-5 ${active ? 'text-brand-600' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.483 9.246 5 7.5 5 4.739 5 2.5 6.567 2.5 8.5v10c0-1.933 2.239-3.5 5-3.5 1.746 0 3.332.483 4.5 1.253m0-10C13.168 5.483 14.754 5 16.5 5c2.761 0 5 1.567 5 3.5v10c0-1.933-2.239-3.5-5-3.5-1.746 0-3.332.483-4.5 1.253" />
     </svg>
   );
 }

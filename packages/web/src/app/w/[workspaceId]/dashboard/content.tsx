@@ -4,7 +4,7 @@ import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import Link from 'next/link';
-import { InfoTip } from '@/components/info-tip';
+import { InfoTip, GuideBox } from '@/components/info-tip';
 
 interface Stats {
   campaigns: Array<{ status: string; count: number }>;
@@ -54,6 +54,10 @@ export default function DashboardContent() {
         </h1>
         <p className="text-sm text-gray-500 mt-1">Overview of your workspace activity</p>
       </div>
+
+      <GuideBox>
+        New here? Start with <strong>Campaigns</strong> to create a campaign, upload contacts, and send SMS. Use <strong>Links</strong> for one-off short URLs.
+      </GuideBox>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">

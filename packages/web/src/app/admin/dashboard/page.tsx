@@ -5,6 +5,7 @@ export const runtime = 'edge';
 import { useEffect, useState, useCallback } from 'react';
 import { api, ApiError } from '@/lib/api';
 import Link from 'next/link';
+import { GuideBox } from '@/components/info-tip';
 
 export default function AdminDashboardPage() {
   const [stats, setStats] = useState<any>(null);
@@ -51,6 +52,10 @@ export default function AdminDashboardPage() {
       <h1 className="font-display text-2xl font-bold text-gray-900 mb-6">Admin Dashboard</h1>
 
       {error && <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>}
+
+      <GuideBox>
+        Use this admin area to manage global users and workspaces. Workspace day-to-day operations still happen inside each workspace dashboard.
+      </GuideBox>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <div className="card p-5">

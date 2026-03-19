@@ -4,6 +4,7 @@ export const runtime = 'edge';
 
 import { useEffect, useState, useCallback } from 'react';
 import { api, ApiError } from '@/lib/api';
+import { GuideBox } from '@/components/info-tip';
 
 export default function AdminWorkspacesPage() {
   const [workspaces, setWorkspaces] = useState<any[]>([]);
@@ -41,6 +42,10 @@ export default function AdminWorkspacesPage() {
       </div>
 
       {error && <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>}
+
+      <GuideBox>
+        Each workspace is an isolated tenant with its own campaigns, links, members, and SMS provider settings.
+      </GuideBox>
 
       <div className="mb-4">
         <input

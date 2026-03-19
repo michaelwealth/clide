@@ -4,6 +4,7 @@ export const runtime = 'edge';
 
 import { useEffect, useState, useCallback } from 'react';
 import { api, ApiError } from '@/lib/api';
+import { GuideBox } from '@/components/info-tip';
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<any[]>([]);
@@ -51,6 +52,10 @@ export default function AdminUsersPage() {
       </div>
 
       {error && <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>}
+
+      <GuideBox>
+        Invite users first, then assign them to workspaces with the appropriate role (admin, operator, or viewer).
+      </GuideBox>
 
       <div className="mb-4">
         <input
