@@ -51,12 +51,16 @@ triggers.post('/', requireRole('operator'), async (c) => {
     max_executions?: number;
   }>();
 
-  if (!['click', 'no_click'].includes(body.type)) {
-    return c.json({ error: 'Type must be "click" or "no_click"' }, 400);
+  if (!['click', 'no_click', 'click_delay'].includes(body.type)) {
+    return c.json({ error: 'Type must be "click", "no_click", or "click_delay"' }, 400);
   }
 
   if (typeof body.delay_minutes !== 'number' || body.delay_minutes < 0) {
     return c.json({ error: 'delay_minutes must be a non-negative number' }, 400);
+  }
+
+  if (body.type === 'click_delay' && body.delay_minutes <= 0) {
+    return c.json({ error: 'click_delay type requires delay_minutes > 0' }, 400);
   }
 
   if (!body.message_template?.trim()) {

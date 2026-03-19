@@ -17,9 +17,9 @@ export function InfoTip({ text }: { text: string }) {
         <circle cx="12" cy="12" r="10" />
         <path d="M12 16v-4M12 8h.01" />
       </svg>
-      <span className="invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-opacity absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-60 px-3 py-2 text-xs text-white bg-gray-900 rounded-lg shadow-lg leading-relaxed pointer-events-none">
+      <span className="invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-opacity absolute z-50 top-full left-1/2 -translate-x-1/2 mt-2 w-60 px-3 py-2 text-xs text-white bg-gray-900 rounded-lg shadow-lg leading-relaxed pointer-events-none">
         {text}
-        <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900" />
+        <span className="absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent border-b-gray-900" />
       </span>
     </span>
   );

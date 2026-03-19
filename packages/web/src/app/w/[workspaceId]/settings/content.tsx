@@ -17,6 +17,8 @@ export default function SettingsContent() {
   const [editName, setEditName] = useState('');
   const [saving, setSaving] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
+  const [showRemoveModal, setShowRemoveModal] = useState(false);
+  const [removingMember, setRemovingMember] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'general' | 'sms'>('general');
 
   const load = useCallback(async () => {
@@ -63,11 +65,12 @@ export default function SettingsContent() {
     }
   };
 
-  const removeMember = async (memberId: string, name: string) => {
-    if (!confirm(`Remove ${name} from this workspace?`)) return;
+  const removeMember = async (memberId: string) => {
     setError('');
     try {
       await api.workspaces.members.remove(workspaceId, memberId);
+      setShowRemoveModal(false);
+      setRemovingMember(null);
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to remove member');
@@ -202,7 +205,7 @@ export default function SettingsContent() {
                       <option value="viewer">Viewer</option>
                     </select>
                     <button
-                      onClick={() => removeMember(m.id, m.name || m.email)}
+                      onClick={() => { setRemovingMember(m); setShowRemoveModal(true); }}
                       className="text-red-400 hover:text-red-600 text-sm"
                     >
                       Remove
@@ -224,6 +227,25 @@ export default function SettingsContent() {
           onClose={() => { setShowInvite(false); load(); }}
         />
       )}
+
+      {/* Remove Member Modal */}
+      {showRemoveModal && removingMember && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => { setShowRemoveModal(false); setRemovingMember(null); }}>
+          <div className="card w-full max-w-md mx-4 p-6" onClick={e => e.stopPropagation()}>
+            <h2 className="font-display text-lg font-semibold mb-4">Remove Member</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Are you sure you want to remove <strong>{removingMember.name || removingMember.email}</strong> from this workspace?
+            </p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => { setShowRemoveModal(false); setRemovingMember(null); }} className="btn-secondary">Cancel</button>
+              <button onClick={() => removeMember(removingMember.id)} className="btn-danger">Remove</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Default Workspace */}
+      <DefaultWorkspaceSetting workspaceId={workspaceId} />
 
         </>
       )}
@@ -304,6 +326,7 @@ function SmsConfigSection({ workspaceId, canManage }: { workspaceId: string; can
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [providerTab, setProviderTab] = useState('kudi');
 
   useEffect(() => {
     api.workspaces.smsConfig.get(workspaceId)
@@ -336,6 +359,8 @@ function SmsConfigSection({ workspaceId, canManage }: { workspaceId: string; can
   if (loading) {
     return <div className="animate-pulse h-32 bg-gray-100 rounded" />;
   }
+
+  const activeProvider = SMS_PROVIDERS.find(p => p.key === providerTab) || SMS_PROVIDERS[0];
 
   return (
     <div className="space-y-6">
@@ -376,12 +401,26 @@ function SmsConfigSection({ workspaceId, canManage }: { workspaceId: string; can
         </div>
       </div>
 
-      {/* Per-provider config */}
-      {SMS_PROVIDERS.map(({ key, label, fields }) => (
-        <div key={key} className="card p-6">
-          <h2 className="font-display text-lg font-semibold mb-4">{label}</h2>
+      {/* Provider API & Sender Config — Tabbed */}
+      <div className="card overflow-hidden">
+        <div className="flex border-b border-gray-200">
+          {SMS_PROVIDERS.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setProviderTab(key)}
+              className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+                providerTab === key
+                  ? 'bg-white text-brand-700 border-b-2 border-brand-600 -mb-px'
+                  : 'bg-gray-50 text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="p-6">
           <div className="space-y-3">
-            {fields.map((field) => (
+            {activeProvider.fields.map((field) => (
               <div key={field}>
                 <label className="label">{fieldLabel(field)}</label>
                 <input
@@ -401,7 +440,7 @@ function SmsConfigSection({ workspaceId, canManage }: { workspaceId: string; can
             ))}
           </div>
         </div>
-      ))}
+      </div>
 
       {canManage && (
         <button onClick={handleSave} disabled={saving} className="btn-primary">
@@ -467,6 +506,46 @@ function PriorityDropdown({
           <option key={opt.value} value={opt.value}>{opt.label}</option>
         ))}
       </select>
+    </div>
+  );
+}
+
+const DEFAULT_WS_KEY = 'clide_default_workspace';
+
+function DefaultWorkspaceSetting({ workspaceId }: { workspaceId: string }) {
+  const [isDefault, setIsDefault] = useState(false);
+
+  useEffect(() => {
+    setIsDefault(localStorage.getItem(DEFAULT_WS_KEY) === workspaceId);
+  }, [workspaceId]);
+
+  const toggle = () => {
+    if (isDefault) {
+      localStorage.removeItem(DEFAULT_WS_KEY);
+      setIsDefault(false);
+    } else {
+      localStorage.setItem(DEFAULT_WS_KEY, workspaceId);
+      setIsDefault(true);
+    }
+  };
+
+  return (
+    <div className="card p-6 mt-6">
+      <h2 className="font-display text-lg font-semibold mb-2">Default Workspace</h2>
+      <p className="text-xs text-gray-500 mb-4">
+        When set as default, you will skip the workspace chooser and land directly in this workspace after login.
+      </p>
+      <label className="inline-flex items-center gap-3 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={isDefault}
+          onChange={toggle}
+          className="w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+        />
+        <span className="text-sm text-gray-700">
+          {isDefault ? 'This is your default workspace' : 'Set this workspace as default'}
+        </span>
+      </label>
     </div>
   );
 }

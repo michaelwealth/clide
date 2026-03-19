@@ -3,6 +3,8 @@ import type { KvLinkData, KvSessionData, CampaignStatus } from '../types';
 const LINK_PREFIX = 'r:';
 const SESSION_PREFIX = 'sess:';
 const CAMPAIGN_STATUS_PREFIX = 'cs:';
+const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
+const SESSION_REFRESH_INTERVAL_SECONDS = 24 * 60 * 60;
 
 // ── Link Resolution KV ──
 
@@ -77,7 +79,7 @@ export async function setSession(
   data: KvSessionData
 ): Promise<void> {
   await kv.put(`${SESSION_PREFIX}${token}`, JSON.stringify(data), {
-    expirationTtl: 1800, // 30 minutes
+    expirationTtl: SESSION_TTL_SECONDS,
   });
 }
 
@@ -95,11 +97,10 @@ export async function refreshSession(
   token: string,
   data: KvSessionData
 ): Promise<void> {
-  // Only re-write with fresh TTL if last refresh was more than 20 minutes ago
-  // (session TTL is 30 min, so refresh in the last 10 minutes of the window)
+  // Only re-write with fresh TTL if last refresh was more than a day ago.
   const now = Math.floor(Date.now() / 1000);
   const lastRefresh = data.refreshed_at ?? 0;
-  if (now - lastRefresh < 1200) return; // 20 min = 1200s; skip if recently refreshed
+  if (now - lastRefresh < SESSION_REFRESH_INTERVAL_SECONDS) return;
 
   await setSession(kv, token, { ...data, refreshed_at: now });
 }

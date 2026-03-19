@@ -26,8 +26,8 @@ interface AuthState {
 }
 
 interface AuthContextType extends AuthState {
-  login: () => void;
-  loginWithPassword: (email: string, password: string) => Promise<void>;
+  login: (returnTo?: string) => void;
+  loginWithPassword: (email: string, password: string, returnTo?: string, turnstileToken?: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -60,12 +60,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refresh();
   }, []);
 
-  const login = () => {
-    window.location.href = api.auth.loginUrl();
+  const login = (returnTo?: string) => {
+    window.location.href = api.auth.loginUrl(returnTo);
   };
 
-  const loginWithPassword = async (email: string, password: string) => {
-    const data = await api.auth.passwordLogin(email, password);
+  const loginWithPassword = async (email: string, password: string, returnTo?: string, turnstileToken?: string) => {
+    const data = await api.auth.passwordLogin(email, password, returnTo, turnstileToken);
     setState({
       user: data.user,
       workspaces: data.workspaces,

@@ -10,7 +10,8 @@ export class ApiError extends Error {
 async function request<T>(
   path: string,
   options: RequestInit = {},
-  timeoutMs = 15000
+  timeoutMs = 15000,
+  redirectOn401 = true,
 ): Promise<T> {
   const url = `${API_URL}${path}`;
 
@@ -32,6 +33,10 @@ async function request<T>(
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({ error: res.statusText }));
+      if (res.status === 401 && redirectOn401 && typeof window !== 'undefined' && window.location.pathname !== '/login') {
+        const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+        window.location.href = `/login?returnTo=${encodeURIComponent(returnTo)}`;
+      }
       throw new ApiError(res.status, (body as any).error || res.statusText);
     }
 
@@ -51,14 +56,14 @@ async function request<T>(
 // ── Auth ──
 export const api = {
   auth: {
-    me: () => request<{ user: any; workspaces: any[] }>('/api/auth/me'),
-    logout: () => request<void>('/api/auth/logout', { method: 'POST' }),
-    loginUrl: () => `${API_URL}/api/auth/login`,
-    passwordLogin: (email: string, password: string) =>
+    me: () => request<{ user: any; workspaces: any[] }>('/api/auth/me', {}, 15000, false),
+    logout: () => request<void>('/api/auth/logout', { method: 'POST' }, 15000, false),
+    loginUrl: (returnTo?: string) => `${API_URL}/api/auth/login${returnTo ? `?return_to=${encodeURIComponent(returnTo)}` : ''}`,
+    passwordLogin: (email: string, password: string, returnTo?: string, turnstileToken?: string) =>
       request<{ user: any; workspaces: any[] }>('/api/auth/password-login', {
         method: 'POST',
-        body: JSON.stringify({ email, password }),
-      }),
+        body: JSON.stringify({ email, password, return_to: returnTo, 'cf-turnstile-response': turnstileToken }),
+      }, 15000, false),
   },
 
   // ── Workspaces ──
@@ -109,10 +114,14 @@ export const api = {
       request(`/api/workspaces/${wid}/campaigns/${cid}/pause`, { method: 'POST' }),
     expire: (wid: string, cid: string) =>
       request(`/api/workspaces/${wid}/campaigns/${cid}/expire`, { method: 'POST' }),
+    kill: (wid: string, cid: string) =>
+      request<{ ok: boolean; linksDeleted: number }>(`/api/workspaces/${wid}/campaigns/${cid}/kill`, { method: 'POST' }),
     delete: (wid: string, cid: string) =>
       request(`/api/workspaces/${wid}/campaigns/${cid}`, { method: 'DELETE' }),
     analytics: (wid: string, cid: string) =>
       request<any>(`/api/workspaces/${wid}/campaigns/${cid}/analytics`),
+    deleteLinks: (wid: string, cid: string) =>
+      request<{ ok: boolean; deleted: number }>(`/api/workspaces/${wid}/campaigns/${cid}/links`, { method: 'DELETE' }),
   },
 
   // ── Contacts ──
@@ -144,6 +153,10 @@ export const api = {
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: res.statusText }));
+        if (res.status === 401 && typeof window !== 'undefined' && window.location.pathname !== '/login') {
+          const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+          window.location.href = `/login?returnTo=${encodeURIComponent(returnTo)}`;
+        }
         throw new ApiError(res.status, (body as any).error || res.statusText);
       }
       return res.json();
@@ -207,6 +220,16 @@ export const api = {
       request(`/api/workspaces/${wid}/links/${lid}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (wid: string, lid: string) =>
       request(`/api/workspaces/${wid}/links/${lid}`, { method: 'DELETE' }),
+  },
+
+  // ── Health ──
+  health: {
+    check: () =>
+      request<{
+        status: string;
+        checks: Record<string, { ok: boolean; latencyMs: number; detail?: string }>;
+        timestamp: string;
+      }>('/api/health'),
   },
 
   // ── Admin ──

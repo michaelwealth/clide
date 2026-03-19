@@ -12,6 +12,8 @@ export default function AdminUsersPage() {
   const [error, setError] = useState('');
   const [showInvite, setShowInvite] = useState(false);
   const [search, setSearch] = useState('');
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingUser, setDeletingUser] = useState<any>(null);
 
   const load = useCallback(async () => {
     try {
@@ -26,10 +28,11 @@ export default function AdminUsersPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const deleteUser = async (userId: string, name: string) => {
-    if (!confirm(`Delete user "${name}"? This will remove them from all workspaces.`)) return;
+  const deleteUser = async (userId: string) => {
     try {
       await api.admin.users.delete(userId);
+      setShowDeleteModal(false);
+      setDeletingUser(null);
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to delete');
@@ -116,7 +119,7 @@ export default function AdminUsersPage() {
                   <td className="px-4 py-3">
                     {!u.is_super_admin && (
                       <button
-                        onClick={() => deleteUser(u.id, u.name || u.email)}
+                        onClick={() => { setDeletingUser(u); setShowDeleteModal(true); }}
                         className="text-red-400 hover:text-red-600 text-xs"
                       >
                         Delete
@@ -134,6 +137,21 @@ export default function AdminUsersPage() {
 
       {showInvite && (
         <InviteUserModal onClose={() => { setShowInvite(false); load(); }} />
+      )}
+
+      {showDeleteModal && deletingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => { setShowDeleteModal(false); setDeletingUser(null); }}>
+          <div className="card w-full max-w-md mx-4 p-6" onClick={e => e.stopPropagation()}>
+            <h2 className="font-display text-lg font-semibold mb-4">Delete User</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Are you sure you want to delete <strong>{deletingUser.name || deletingUser.email}</strong>? This will remove them from all workspaces.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => { setShowDeleteModal(false); setDeletingUser(null); }} className="btn-secondary">Cancel</button>
+              <button onClick={() => deleteUser(deletingUser.id)} className="btn-danger">Delete User</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

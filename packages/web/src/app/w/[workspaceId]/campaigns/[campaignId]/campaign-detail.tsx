@@ -7,6 +7,12 @@ import { CampaignStatusBadge } from '../_components';
 import Link from 'next/link';
 import { InfoTip, GuideBox } from '@/components/info-tip';
 
+const TRIGGER_LABELS: Record<string, string> = {
+  click: 'On Click',
+  no_click: 'No Click (after delay)',
+  click_delay: 'On Click + Delay',
+};
+
 export default function CampaignDetailClient() {
   const { workspaceId, campaignId } = useParams() as { workspaceId: string; campaignId: string };
   const [campaign, setCampaign] = useState<any>(null);
@@ -19,6 +25,9 @@ export default function CampaignDetailClient() {
   const [showUpload, setShowUpload] = useState(false);
   const [showTriggerForm, setShowTriggerForm] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [editingTrigger, setEditingTrigger] = useState<any>(null);
+  const [showDeleteLinksConfirm, setShowDeleteLinksConfirm] = useState(false);
+  const [showKillConfirm, setShowKillConfirm] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -52,6 +61,8 @@ export default function CampaignDetailClient() {
   };
 
   const sendSms = () => performAction('sms', () => api.sms.send(workspaceId, campaignId, { send_all: true }));
+  const deleteAllLinks = () => performAction('delete-links', () => api.campaigns.deleteLinks(workspaceId, campaignId));
+  const killCampaign = () => performAction('kill', () => api.campaigns.kill(workspaceId, campaignId));
 
   if (loading) {
     return (
@@ -102,7 +113,7 @@ export default function CampaignDetailClient() {
         </div>
 
         {/* Actions */}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 justify-end">
           {campaign.status === 'draft' && (
             <button
               onClick={() => performAction('schedule', () => api.campaigns.schedule(workspaceId, campaignId))}
@@ -128,26 +139,63 @@ export default function CampaignDetailClient() {
                 disabled={!!actionLoading}
                 className="btn-secondary"
               >
-                Pause
+                {actionLoading === 'pause' ? '…' : 'Pause'}
               </button>
-              <button onClick={() => setShowSmsConfirm(true)} className="btn-primary">
-                Send SMS
+              <button
+                onClick={() => setShowSmsConfirm(true)}
+                className="btn-primary"
+                disabled={(stats?.contacts ?? 0) === 0}
+                title={(stats?.contacts ?? 0) === 0 ? 'Upload contacts CSV first' : 'Send campaign SMS now'}
+              >
+                {(stats?.contacts ?? 0) === 0 ? 'Send SMS (No Contacts Yet)' : 'Send SMS'}
               </button>
             </>
           )}
           {campaign.status === 'paused' && (
+            <>
+              <button
+                onClick={() => performAction('activate', () => api.campaigns.activate(workspaceId, campaignId))}
+                disabled={!!actionLoading}
+                className="btn-primary"
+              >
+                {actionLoading === 'activate' ? '…' : 'Resume'}
+              </button>
+              <button
+                onClick={() => setShowSmsConfirm(true)}
+                className="btn-secondary"
+                disabled={true}
+                title="Resume campaign to send SMS"
+              >
+                Send SMS
+              </button>
+            </>
+          )}
+          {!['active', 'paused'].includes(campaign.status) && (
             <button
-              onClick={() => performAction('activate', () => api.campaigns.activate(workspaceId, campaignId))}
-              disabled={!!actionLoading}
-              className="btn-primary"
+              disabled
+              className="btn-secondary"
+              title="Activate campaign and upload contacts to send SMS"
             >
-              Resume
+              Send SMS
+            </button>
+          )}
+          {campaign.status !== 'expired' && (
+            <button
+              onClick={() => setShowKillConfirm(true)}
+              disabled={!!actionLoading}
+              className="btn-secondary text-red-600 border-red-200 hover:bg-red-50"
+              title="Permanently expire this campaign and delete all short links. Cannot be undone."
+            >
+              Kill
             </button>
           )}
         </div>
       </div>
 
       {error && <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>}
+      <p className="text-xs text-gray-500 mb-6">
+        SMS is sent only when campaign is <strong>Active</strong> and contacts are uploaded. CSV upload does not auto-send SMS.
+      </p>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -188,6 +236,10 @@ export default function CampaignDetailClient() {
               <dd className="text-gray-900 truncate ml-4 max-w-[250px]">{campaign.fallback_url}</dd>
             </div>
             <div className="flex justify-between">
+              <dt className="text-gray-500">Shortlink Generation</dt>
+              <dd className="text-gray-900">{campaign.disable_shortlink_generation ? 'Disabled' : 'Enabled'}</dd>
+            </div>
+            <div className="flex justify-between">
               <dt className="text-gray-500">Start</dt>
               <dd className="text-gray-900">{campaign.start_at ? new Date(campaign.start_at).toLocaleString() : '—'}</dd>
             </div>
@@ -209,7 +261,7 @@ export default function CampaignDetailClient() {
       </div>
 
       {/* Quick Links */}
-      <div className="flex gap-4 mb-8">
+      <div className="flex flex-wrap gap-3 mb-8">
         <Link
           href={`/w/${workspaceId}/campaigns/${campaignId}/contacts`}
           className="btn-secondary"
@@ -225,27 +277,59 @@ export default function CampaignDetailClient() {
         <button onClick={() => setShowTriggerForm(true)} className="btn-secondary">
           + Add Trigger
         </button>
+        {stats?.links > 0 && (
+          <button
+            onClick={() => setShowDeleteLinksConfirm(true)}
+            className="btn-secondary text-red-600 border-red-200 hover:bg-red-50"
+            title="Delete all contact short links for this campaign. Contacts are kept."
+          >
+            Delete All Links ({stats.links})
+          </button>
+        )}
       </div>
 
       {/* Triggers */}
       {triggers.length > 0 && (
-        <div className="card p-6">
-          <h2 className="font-display text-lg font-semibold mb-4">Trigger Rules</h2>
+        <div className="card p-6 mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-display text-lg font-semibold">Trigger Rules</h2>
+            <button onClick={() => setShowTriggerForm(true)} className="btn-secondary text-xs py-1.5 px-3">
+              + Add Trigger
+            </button>
+          </div>
           <div className="divide-y divide-gray-100">
             {triggers.map((t: any) => (
-              <div key={t.id} className="py-3 flex items-center justify-between">
-                <div>
-                  <span className={`badge ${t.type === 'click' ? 'badge-green' : 'badge-yellow'} mr-2`}>
-                    {t.type}
-                  </span>
-                  <span className="text-sm text-gray-600">
-                    Delay: {t.delay_minutes}min · Max: {t.max_executions}x
-                  </span>
-                  <p className="text-xs text-gray-400 mt-1 truncate max-w-[400px]">{t.message_template}</p>
+              <div key={t.id} className="py-3 flex items-center justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <span className={`badge ${t.type === 'click' ? 'badge-green' : t.type === 'click_delay' ? 'badge-blue' : 'badge-yellow'}`}>
+                      {TRIGGER_LABELS[t.type] ?? t.type}
+                    </span>
+                    {t.type !== 'click' && (
+                      <span className="text-xs text-gray-500">Delay: {t.delay_minutes} min</span>
+                    )}
+                    <span className="text-xs text-gray-500">Max: {t.max_executions}×</span>
+                    <span className={`text-xs font-medium ${t.is_active ? 'text-emerald-600' : 'text-gray-400'}`}>
+                      {t.is_active ? '● Active' : '○ Disabled'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-400 truncate max-w-[400px]">{t.message_template}</p>
                 </div>
-                <span className={`text-xs ${t.is_active ? 'text-green-600' : 'text-gray-400'}`}>
-                  {t.is_active ? 'Active' : 'Disabled'}
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => setEditingTrigger(t)}
+                    className="text-xs text-brand-600 hover:text-brand-800 cursor-pointer px-2 py-1 rounded hover:bg-brand-50"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => performAction(`del-trigger-${t.id}`, () => api.triggers.delete(workspaceId, campaignId, t.id))}
+                    disabled={!!actionLoading}
+                    className="text-xs text-red-500 hover:text-red-700 cursor-pointer px-2 py-1 rounded hover:bg-red-50 disabled:opacity-40"
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -296,6 +380,58 @@ export default function CampaignDetailClient() {
           campaignId={campaignId}
           onClose={() => { setShowTriggerForm(false); load(); }}
         />
+      )}
+
+      {/* Edit Trigger Modal */}
+      {editingTrigger && (
+        <TriggerEditModal
+          workspaceId={workspaceId}
+          campaignId={campaignId}
+          trigger={editingTrigger}
+          onClose={() => { setEditingTrigger(null); load(); }}
+        />
+      )}
+
+      {/* Kill Campaign Confirm */}
+      {showKillConfirm && (
+        <Modal title="Kill Campaign?" onClose={() => setShowKillConfirm(false)}>
+          <p className="text-sm text-gray-600 mb-2">
+            This will <strong>permanently expire</strong> this campaign and delete all <strong>{stats?.links ?? 0}</strong> short links.
+          </p>
+          <p className="text-sm text-red-600 mb-4">
+            Short links will stop working immediately. This cannot be undone — the campaign can never be re-activated.
+          </p>
+          <div className="flex justify-end gap-3">
+            <button onClick={() => setShowKillConfirm(false)} className="btn-secondary">Cancel</button>
+            <button
+              onClick={() => { killCampaign(); setShowKillConfirm(false); }}
+              disabled={!!actionLoading}
+              className="btn-danger"
+            >
+              {actionLoading === 'kill' ? 'Killing…' : 'Kill Campaign'}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Delete All Links Confirm */}
+      {showDeleteLinksConfirm && (
+        <Modal title="Delete All Campaign Links?" onClose={() => setShowDeleteLinksConfirm(false)}>
+          <p className="text-sm text-gray-600 mb-4">
+            This will permanently delete all <strong>{stats?.links}</strong> short links for this campaign, removing them from KV so they no longer redirect.
+            Contacts are kept. You can re-import a CSV to regenerate links.
+          </p>
+          <div className="flex justify-end gap-3">
+            <button onClick={() => setShowDeleteLinksConfirm(false)} className="btn-secondary">Cancel</button>
+            <button
+              onClick={() => { deleteAllLinks(); setShowDeleteLinksConfirm(false); }}
+              disabled={!!actionLoading}
+              className="btn-danger"
+            >
+              {actionLoading === 'delete-links' ? 'Deleting…' : 'Delete All Links'}
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );
@@ -455,29 +591,39 @@ function TriggerFormModal({ workspaceId, campaignId, onClose }: { workspaceId: s
     <Modal title="Add Trigger Rule" onClose={onClose}>
       {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
       <GuideBox>
-        Triggers send automated follow-up SMS to contacts based on their click behavior. <strong>On Click</strong> fires when a contact clicks their link. <strong>No Click</strong> fires after a delay if they haven&apos;t clicked.
+        Triggers send automated follow-up SMS based on click behavior.
+        <ul className="list-disc list-inside mt-1 space-y-0.5">
+          <li><strong>On Click</strong> — SMS sent immediately when a contact clicks their link.</li>
+          <li><strong>On Click + Delay</strong> — SMS sent after a delay once they click.</li>
+          <li><strong>No Click (after delay)</strong> — SMS sent after the delay if they haven&apos;t clicked.</li>
+        </ul>
       </GuideBox>
       <div className="space-y-4 mt-4">
         <div>
           <label className="label">
             Trigger Type
-            <InfoTip text="'On Click' sends an SMS immediately when a contact clicks their link. 'No Click' sends after the specified delay if the contact hasn't clicked." />
           </label>
           <select className="input" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>
-            <option value="click">On Click</option>
+            <option value="click">On Click (immediate)</option>
+            <option value="click_delay">On Click + Delay</option>
             <option value="no_click">No Click (after delay)</option>
           </select>
         </div>
-        <div>
-          <label className="label">Delay (minutes)</label>
-          <input
-            className="input"
-            type="number"
-            min="0"
-            value={form.delay_minutes}
-            onChange={e => setForm({ ...form, delay_minutes: parseInt(e.target.value) || 0 })}
-          />
-        </div>
+        {form.type !== 'click' && (
+          <div>
+            <label className="label">Delay (minutes)</label>
+            <input
+              className="input"
+              type="number"
+              min={form.type === 'click_delay' ? 1 : 0}
+              value={form.delay_minutes}
+              onChange={e => setForm({ ...form, delay_minutes: parseInt(e.target.value) || 0 })}
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              {form.type === 'click_delay' ? 'Time after click to send the message.' : 'Wait this long after contact upload before sending if they haven\'t clicked.'}
+            </p>
+          </div>
+        )}
         <div>
           <label className="label">Message Template</label>
           <textarea
@@ -488,7 +634,7 @@ function TriggerFormModal({ workspaceId, campaignId, onClose }: { workspaceId: s
           />
         </div>
         <div>
-          <label className="label">Max Executions</label>
+          <label className="label">Max Executions <InfoTip text="How many times this trigger can fire for a single contact" /></label>
           <input
             className="input"
             type="number"
@@ -509,6 +655,92 @@ function TriggerFormModal({ workspaceId, campaignId, onClose }: { workspaceId: s
   );
 }
 
+function TriggerEditModal({ workspaceId, campaignId, trigger, onClose }: {
+  workspaceId: string;
+  campaignId: string;
+  trigger: any;
+  onClose: () => void;
+}) {
+  const [form, setForm] = useState({
+    delay_minutes: trigger.delay_minutes ?? 0,
+    message_template: trigger.message_template ?? '',
+    max_executions: trigger.max_executions ?? 1,
+    is_active: trigger.is_active === 1 || trigger.is_active === true,
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const save = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      await api.triggers.update(workspaceId, campaignId, trigger.id, form);
+      onClose();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to update trigger');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const showDelay = trigger.type !== 'click';
+
+  return (
+    <Modal title={`Edit Trigger — ${TRIGGER_LABELS[trigger.type] ?? trigger.type}`} onClose={onClose}>
+      {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
+      <div className="space-y-4">
+        {showDelay && (
+          <div>
+            <label className="label">Delay (minutes)</label>
+            <input
+              className="input"
+              type="number"
+              min={trigger.type === 'click_delay' ? 1 : 0}
+              value={form.delay_minutes}
+              onChange={e => setForm({ ...form, delay_minutes: parseInt(e.target.value) || 0 })}
+            />
+          </div>
+        )}
+        <div>
+          <label className="label">Message Template</label>
+          <textarea
+            className="input min-h-[80px]"
+            value={form.message_template}
+            onChange={e => setForm({ ...form, message_template: e.target.value })}
+          />
+        </div>
+        <div>
+          <label className="label">Max Executions</label>
+          <input
+            className="input"
+            type="number"
+            min="1"
+            max="10"
+            value={form.max_executions}
+            onChange={e => setForm({ ...form, max_executions: parseInt(e.target.value) || 1 })}
+          />
+        </div>
+        <div>
+          <label className="inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.is_active}
+              onChange={e => setForm({ ...form, is_active: e.target.checked })}
+            />
+            Active
+          </label>
+        </div>
+      </div>
+      <div className="flex justify-end gap-3 mt-6">
+        <button onClick={onClose} className="btn-secondary">Cancel</button>
+        <button onClick={save} disabled={saving || !form.message_template} className="btn-primary">
+          {saving ? 'Saving…' : 'Save Changes'}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function EditCampaignModal({ workspaceId, campaignId, campaign, onClose }: {
   workspaceId: string;
   campaignId: string;
@@ -521,6 +753,7 @@ function EditCampaignModal({ workspaceId, campaignId, campaign, onClose }: {
     base_url: campaign.base_url || '',
     fallback_url: campaign.fallback_url || '',
     sms_template: campaign.sms_template || '',
+    disable_shortlink_generation: !!campaign.disable_shortlink_generation,
     start_at: campaign.start_at ? campaign.start_at.slice(0, 16) : '',
     end_at: campaign.end_at ? campaign.end_at.slice(0, 16) : '',
   });
@@ -540,6 +773,7 @@ function EditCampaignModal({ workspaceId, campaignId, campaign, onClose }: {
         payload.name = form.name;
         payload.base_url = form.base_url;
         payload.sms_template = form.sms_template;
+        payload.disable_shortlink_generation = form.disable_shortlink_generation;
       }
       await api.campaigns.update(workspaceId, campaignId, payload);
       onClose();
@@ -578,6 +812,17 @@ function EditCampaignModal({ workspaceId, campaignId, campaign, onClose }: {
           <label className="label">SMS Template</label>
           <textarea className="input min-h-[60px]" value={form.sms_template} disabled={isLimited}
             onChange={e => setForm({ ...form, sms_template: e.target.value })} />
+        </div>
+        <div>
+          <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={form.disable_shortlink_generation}
+              disabled={isLimited}
+              onChange={e => setForm({ ...form, disable_shortlink_generation: e.target.checked })}
+            />
+            Disable shortlink generation
+          </label>
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>

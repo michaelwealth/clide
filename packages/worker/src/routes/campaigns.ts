@@ -25,6 +25,9 @@ campaigns.get('/', async (c) => {
   if (status) {
     query += ' AND status = ?';
     params.push(status);
+  } else {
+    // By default hide expired campaigns from the "All" list.
+    query += " AND status != 'expired'";
   }
 
   if (search) {
@@ -33,7 +36,7 @@ campaigns.get('/', async (c) => {
     params.push(`%${safeSearch}%`, `%${safeSearch}%`);
   }
 
-  query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+  query += ' ORDER BY updated_at DESC, created_at DESC LIMIT ? OFFSET ?';
   params.push(limit, offset);
 
   const result = await c.env.DB.prepare(query).bind(...params).all<CampaignRow>();
@@ -43,6 +46,8 @@ campaigns.get('/', async (c) => {
   if (status) {
     countQuery += ' AND status = ?';
     countParams.push(status);
+  } else {
+    countQuery += " AND status != 'expired'";
   }
   if (search) {
     const safeSearch = search.replace(/[%_]/g, '\\$&');
@@ -74,6 +79,7 @@ campaigns.post('/', requireRole('operator'), async (c) => {
     base_url: string;
     fallback_url: string;
     sms_template?: string;
+    disable_shortlink_generation?: boolean;
     start_at?: string;
     end_at?: string;
   }>();
@@ -115,12 +121,13 @@ campaigns.post('/', requireRole('operator'), async (c) => {
 
   const id = generateId();
   await c.env.DB.prepare(`
-    INSERT INTO campaigns (id, workspace_id, name, campaign_key, base_url, fallback_url, sms_template, start_at, end_at, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO campaigns (id, workspace_id, name, campaign_key, base_url, fallback_url, sms_template, disable_shortlink_generation, start_at, end_at, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     id, workspace.id, body.name.trim(), campaignKey,
     body.base_url, body.fallback_url,
     body.sms_template || null,
+    body.disable_shortlink_generation ? 1 : 0,
     body.start_at || null, body.end_at || null,
     user.id
   ).run();
@@ -192,6 +199,7 @@ campaigns.put('/:campaignId', requireRole('operator'), async (c) => {
     base_url?: string;
     fallback_url?: string;
     sms_template?: string;
+    disable_shortlink_generation?: boolean;
     start_at?: string;
     end_at?: string;
   }>();
@@ -199,7 +207,7 @@ campaigns.put('/:campaignId', requireRole('operator'), async (c) => {
   // For active/paused campaigns, only allow editing dates and fallback_url
   const isLimited = ['active', 'paused'].includes(campaign.status);
   if (isLimited) {
-    const hasBlockedFields = body.name !== undefined || body.base_url !== undefined || body.sms_template !== undefined;
+    const hasBlockedFields = body.name !== undefined || body.base_url !== undefined || body.sms_template !== undefined || body.disable_shortlink_generation !== undefined;
     if (hasBlockedFields) {
       return c.json({ error: 'Active/paused campaigns can only update dates and fallback URL' }, 400);
     }
@@ -239,6 +247,10 @@ campaigns.put('/:campaignId', requireRole('operator'), async (c) => {
   if (body.sms_template !== undefined) {
     sets.push('sms_template = ?');
     params.push(body.sms_template || null);
+  }
+  if (body.disable_shortlink_generation !== undefined) {
+    sets.push('disable_shortlink_generation = ?');
+    params.push(body.disable_shortlink_generation ? 1 : 0);
   }
   if (body.start_at !== undefined) {
     sets.push('start_at = ?');
@@ -315,6 +327,19 @@ async function transitionCampaign(
     campaign.end_at
   );
 
+  // Expire semantics: release campaign links for future reuse.
+  if (targetStatus === 'expired') {
+    const links = await c.env.DB.prepare(
+      'SELECT slug FROM links WHERE campaign_id = ?'
+    ).bind(campaignId).all<{ slug: string }>();
+
+    await Promise.allSettled(
+      links.results.map((l) => deleteLinkData(c.env.KV, campaign.campaign_key, l.slug))
+    );
+
+    await c.env.DB.prepare('DELETE FROM links WHERE campaign_id = ?').bind(campaignId).run();
+  }
+
   return c.json({ ok: true, status: targetStatus });
 }
 
@@ -325,6 +350,92 @@ campaigns.post('/:campaignId/expire', requireRole('admin'), (c) => transitionCam
 
 // Cancel schedule: scheduled → draft
 campaigns.post('/:campaignId/unschedule', requireRole('operator'), (c) => transitionCampaign(c, 'draft'));
+
+/**
+ * POST /:campaignId/kill
+ * Kill a campaign: permanently expire it and delete all contact short links.
+ * The campaign record and contacts are preserved for history.
+ * Cannot be undone — status moves to 'expired' and links are purged from KV.
+ */
+campaigns.post('/:campaignId/kill', requireRole('admin'), async (c) => {
+  const { workspace } = c.get('workspace');
+  const campaignId = c.req.param('campaignId');
+
+  const campaign = await c.env.DB.prepare(
+    'SELECT id, campaign_key, status, fallback_url, end_at FROM campaigns WHERE id = ? AND workspace_id = ?'
+  ).bind(campaignId, workspace.id).first<{
+    id: string;
+    campaign_key: string;
+    status: string;
+    fallback_url: string;
+    end_at: string | null;
+  }>();
+
+  if (!campaign) {
+    return c.json({ error: 'Campaign not found' }, 404);
+  }
+  if (campaign.status === 'expired') {
+    return c.json({ error: 'Campaign is already expired' }, 400);
+  }
+
+  // Transition to expired atomically to avoid race with concurrent status transitions.
+  const transition = await c.env.DB.prepare(`
+    UPDATE campaigns SET status = 'expired', updated_at = datetime('now')
+    WHERE id = ? AND workspace_id = ? AND status = ?
+  `).bind(campaignId, workspace.id, campaign.status).run();
+
+  if (!transition.meta.changes) {
+    return c.json({ error: 'Campaign status changed concurrently, please retry' }, 409);
+  }
+
+  // Update KV so redirects immediately use fallback
+  await setCampaignStatusCache(c.env.KV, campaignId, 'expired', campaign.fallback_url || '', campaign.end_at);
+
+  // Delete all contact links from DB and KV
+  const links = await c.env.DB.prepare(
+    'SELECT slug FROM links WHERE campaign_id = ?'
+  ).bind(campaignId).all<{ slug: string }>();
+
+  await Promise.allSettled(
+    links.results.map((l) => deleteLinkData(c.env.KV, campaign.campaign_key, l.slug))
+  );
+
+  await c.env.DB.prepare('DELETE FROM links WHERE campaign_id = ?').bind(campaignId).run();
+
+  return c.json({ ok: true, linksDeleted: links.results.length });
+});
+
+/**
+ * DELETE /:campaignId/links
+ * Delete all contact links for a campaign (frees up slugs for re-use).
+ * Does NOT delete the campaign itself or its contacts.
+ */
+campaigns.delete('/:campaignId/links', requireRole('admin'), async (c) => {
+  const { workspace } = c.get('workspace');
+  const campaignId = c.req.param('campaignId');
+
+  const campaign = await c.env.DB.prepare(
+    'SELECT id, campaign_key FROM campaigns WHERE id = ? AND workspace_id = ?'
+  ).bind(campaignId, workspace.id).first<{ id: string; campaign_key: string }>();
+
+  if (!campaign) {
+    return c.json({ error: 'Campaign not found' }, 404);
+  }
+
+  const links = await c.env.DB.prepare(
+    'SELECT slug FROM links WHERE campaign_id = ?'
+  ).bind(campaignId).all<{ slug: string }>();
+
+  // Remove from KV so redirects stop working immediately
+  await Promise.allSettled(
+    links.results.map((l) => deleteLinkData(c.env.KV, campaign.campaign_key, l.slug))
+  );
+
+  // Remove from DB
+  await c.env.DB.prepare('DELETE FROM links WHERE campaign_id = ?').bind(campaignId).run();
+
+  return c.json({ ok: true, deleted: links.results.length });
+});
 
 /**
  * DELETE /:campaignId

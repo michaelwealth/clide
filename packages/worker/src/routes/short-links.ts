@@ -29,7 +29,7 @@ shortLinks.get('/', async (c) => {
     countParams.push(`%${safeSearch}%`, `%${safeSearch}%`, `%${safeSearch}%`);
   }
 
-  listQuery += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+  listQuery += ' ORDER BY updated_at DESC, created_at DESC LIMIT ? OFFSET ?';
   listParams.push(limit, offset);
 
   const [links, countResult] = await Promise.all([

@@ -85,7 +85,7 @@ export async function scheduleTriggers(env: Env): Promise<void> {
     const rule: TriggerRuleRow = {
       id: trigger.trigger_rule_id,
       campaign_id: trigger.campaign_id,
-      type: trigger.type as 'click' | 'no_click',
+      type: trigger.type as 'click' | 'no_click' | 'click_delay',
       delay_minutes: 0,
       message_template: trigger.message_template,
       max_executions: trigger.max_executions,

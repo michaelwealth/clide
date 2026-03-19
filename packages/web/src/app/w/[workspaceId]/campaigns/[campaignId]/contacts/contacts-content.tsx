@@ -88,6 +88,10 @@ function ContactsPage() {
       const res = await fetch(url, { credentials: 'include' });
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: res.statusText }));
+        if (res.status === 401 && typeof window !== 'undefined' && window.location.pathname !== '/login') {
+          const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+          window.location.href = `/login?returnTo=${encodeURIComponent(returnTo)}`;
+        }
         throw new ApiError(res.status, (body as any).error || res.statusText);
       }
       const blob = await res.blob();

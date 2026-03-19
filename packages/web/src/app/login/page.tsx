@@ -2,31 +2,84 @@
 
 export const runtime = 'edge';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useRef } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
+
+const TURNSTILE_SITE_KEY = '0x4AAAAAACtXiApnYrv8AwzG';
 
 export default function LoginPage() {
   const { login, loginWithPassword, user, workspaces, loading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const turnstileContainerRef = useRef<HTMLDivElement>(null);
+  const turnstileWidgetId = useRef<string | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState('');
+
+  const returnTo = searchParams.get('returnTo') || '/';
+  const isProduction = typeof window !== 'undefined' && window.location.hostname !== 'localhost';
 
   useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     if (!loading && user) {
-      if (workspaces.length > 0) {
-        router.replace(`/w/${workspaces[0].id}/dashboard`);
+      router.replace(returnTo);
+    }
+  }, [loading, user, router, returnTo]);
+
+  // Load Turnstile script and render widget when password form is shown on production
+  useEffect(() => {
+    if (!showPasswordForm || !isProduction || !turnstileContainerRef.current) return;
+
+    const scriptId = 'cf-turnstile-script';
+    let script = document.getElementById(scriptId) as HTMLScriptElement | null;
+
+    const renderWidget = () => {
+      if (!turnstileContainerRef.current) return;
+      // Clear any stale widget
+      if (turnstileWidgetId.current && (window as any).turnstile) {
+        (window as any).turnstile.remove(turnstileWidgetId.current);
+      }
+      turnstileWidgetId.current = (window as any).turnstile?.render(turnstileContainerRef.current, {
+        sitekey: TURNSTILE_SITE_KEY,
+        callback: (token: string) => setTurnstileToken(token),
+        'expired-callback': () => setTurnstileToken(''),
+        'error-callback': () => setTurnstileToken(''),
+      });
+    };
+
+    if ((window as any).turnstile) {
+      renderWidget();
+    } else {
+      if (!script) {
+        script = document.createElement('script');
+        script.id = scriptId;
+        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
+        script.async = true;
+        script.defer = true;
+        script.onload = renderWidget;
+        document.head.appendChild(script);
       } else {
-        router.replace('/');
+        // Script tag exists but may not have fired onload yet; wait
+        script.addEventListener('load', renderWidget, { once: true });
       }
     }
-  }, [loading, user, workspaces, router]);
+
+    return () => {
+      if (turnstileWidgetId.current && (window as any).turnstile) {
+        (window as any).turnstile.remove(turnstileWidgetId.current);
+        turnstileWidgetId.current = null;
+      }
+      setTurnstileToken('');
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showPasswordForm]);
 
   if (!loading && user) {
     return null;
@@ -34,13 +87,22 @@ export default function LoginPage() {
 
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isProduction && !turnstileToken) {
+      setError('Please complete the verification challenge');
+      return;
+    }
     setError('');
     setSubmitting(true);
     try {
-      await loginWithPassword(email, password);
-      router.replace('/');
+      await loginWithPassword(email, password, returnTo, isProduction ? turnstileToken : undefined);
+      router.replace(returnTo);
     } catch (err: any) {
       setError(err.message || 'Login failed');
+      // Reset Turnstile on error
+      if (isProduction && turnstileWidgetId.current && (window as any).turnstile) {
+        (window as any).turnstile.reset(turnstileWidgetId.current);
+        setTurnstileToken('');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -129,7 +191,7 @@ export default function LoginPage() {
 
           {/* Google Sign-in Button */}
           <button
-            onClick={login}
+            onClick={() => login(returnTo)}
             className="w-full flex items-center justify-center gap-3 px-4 py-3 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 hover:border-gray-400 transition-all duration-150 shadow-sm hover:shadow focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
@@ -217,9 +279,15 @@ export default function LoginPage() {
                 />
               </div>
               {error && <p className="text-xs text-red-600">{error}</p>}
+
+              {/* Cloudflare Turnstile — production only */}
+              {isProduction && (
+                <div ref={turnstileContainerRef} className="flex justify-center" />
+              )}
+
               <button
                 type="submit"
-                disabled={submitting}
+                disabled={submitting || (isProduction && !turnstileToken)}
                 className="btn-primary w-full py-2.5 text-sm"
               >
                 {submitting ? 'Signing in…' : 'Sign in'}

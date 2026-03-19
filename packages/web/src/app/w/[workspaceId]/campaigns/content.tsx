@@ -15,6 +15,15 @@ interface Campaign {
   start_at: string | null;
   end_at: string | null;
   created_at: string;
+  updated_at: string;
+}
+
+function formatDateTimeParts(value: string) {
+  const dt = new Date(value);
+  return {
+    date: dt.toLocaleDateString('en-GB'),
+    time: dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+  };
 }
 
 export default function CampaignsContent() {
@@ -31,6 +40,7 @@ export default function CampaignsContent() {
     base_url: '',
     fallback_url: '',
     sms_template: '',
+    disable_shortlink_generation: false,
     start_at: '',
     end_at: '',
   });
@@ -58,7 +68,7 @@ export default function CampaignsContent() {
     try {
       await api.campaigns.create(workspaceId, form);
       setShowCreate(false);
-      setForm({ name: '', base_url: '', fallback_url: '', sms_template: '', start_at: '', end_at: '' });
+      setForm({ name: '', base_url: '', fallback_url: '', sms_template: '', disable_shortlink_generation: false, start_at: '', end_at: '' });
       loadCampaigns();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to create campaign');
@@ -100,7 +110,7 @@ export default function CampaignsContent() {
                 : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
             }`}
           >
-            {s || 'All'}
+            {s === '' ? 'All' : s === 'expired' ? 'History' : s}
           </button>
         ))}
       </div>
@@ -123,33 +133,39 @@ export default function CampaignsContent() {
           </button>
         </div>
       ) : (
-        <div className="card divide-y divide-gray-100">
-          {campaigns.map(campaign => (
-            <Link
-              key={campaign.id}
-              href={`/w/${workspaceId}/campaigns/${campaign.id}`}
-              className="flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
-            >
-              <div>
-                <div className="flex items-center gap-3 mb-1">
-                  <span className="font-medium text-gray-900">{campaign.name}</span>
+        <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-4 gap-4">
+          {campaigns.map(campaign => {
+            const created = formatDateTimeParts(campaign.created_at);
+            return (
+              <Link
+                key={campaign.id}
+                href={`/w/${workspaceId}/campaigns/${campaign.id}`}
+                className="card p-4 hover:border-brand-200 hover:shadow-md transition-all"
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div className="text-[11px] text-gray-400 leading-tight">
+                    <p>{created.date}</p>
+                    <p>{created.time}</p>
+                  </div>
                   <CampaignStatusBadge status={campaign.status} />
                 </div>
-                <div className="flex items-center gap-4 text-xs text-gray-400">
-                  <span>Key: {campaign.campaign_key}</span>
-                  {campaign.start_at && (
-                    <span>Start: {new Date(campaign.start_at).toLocaleDateString()}</span>
-                  )}
-                  {campaign.end_at && (
-                    <span>End: {new Date(campaign.end_at).toLocaleDateString()}</span>
-                  )}
+
+                <h3 className="font-display text-base font-semibold text-gray-900 truncate">
+                  {campaign.name}
+                </h3>
+
+                <p className="mt-1 text-xs text-gray-400 font-mono truncate">
+                  {campaign.campaign_key}
+                </p>
+
+                <div className="mt-3 space-y-1 text-[11px] text-gray-500">
+                  <p className="truncate">Last edited: {new Date(campaign.updated_at).toLocaleString()}</p>
+                  <p>Start: {campaign.start_at ? new Date(campaign.start_at).toLocaleDateString('en-GB') : '—'}</p>
+                  <p>End: {campaign.end_at ? new Date(campaign.end_at).toLocaleDateString('en-GB') : '—'}</p>
                 </div>
-              </div>
-              <svg className="w-5 h-5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </Link>
-          ))}
+              </Link>
+            );
+          })}
         </div>
       )}
 
@@ -213,6 +229,19 @@ export default function CampaignsContent() {
                   placeholder="Hi {firstname}, check out {link}"
                 />
                 <p className="text-xs text-gray-400 mt-1">Variables: {'{firstname}'}, {'{link}'}, or any CSV column name like {'{email}'}, {'{city}'}</p>
+              </div>
+              <div>
+                <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={form.disable_shortlink_generation}
+                    onChange={e => setForm({ ...form, disable_shortlink_generation: e.target.checked })}
+                  />
+                  Disable shortlink generation for this campaign
+                </label>
+                <p className="text-xs text-gray-500 mt-1">
+                  Contacts will still upload and SMS personalization will still work, but no campaign links will be created.
+                </p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>

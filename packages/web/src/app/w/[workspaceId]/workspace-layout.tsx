@@ -21,7 +21,6 @@ const navItems = [
   { label: 'Dashboard', href: '/dashboard', icon: DashboardIcon, tip: 'Overview of workspace stats, campaigns, and SMS delivery' },
   { label: 'Campaigns', href: '/campaigns', icon: CampaignsIcon, tip: 'Create and manage link campaigns with SMS dispatch' },
   { label: 'Links', href: '/links', icon: LinksIcon, tip: 'Create and manage standalone short links' },
-  { label: 'Docs', href: '/docs', icon: DocsIcon, tip: 'Help guides and platform documentation', absolute: true },
   { label: 'Settings', href: '/settings', icon: SettingsIcon, tip: 'Configure workspace name, members, and SMS providers' },
 ];
 
@@ -33,20 +32,30 @@ export default function WorkspaceLayoutClient({ children }: { children: ReactNod
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [healthOpen, setHealthOpen] = useState(false);
+  const [healthData, setHealthData] = useState<{
+    status: string;
+    checks: Record<string, { ok: boolean; latencyMs: number; detail?: string }>;
+    timestamp: string;
+  } | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
   const switcherRef = useRef<HTMLDivElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
+  const healthRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!loading && !user) {
-      window.location.href = '/login';
+      const returnTo = `${pathname}${window.location.search}${window.location.hash}`;
+      window.location.href = `/login?returnTo=${encodeURIComponent(returnTo)}`;
     }
-  }, [user, loading]);
+  }, [user, loading, pathname]);
 
   // Close dropdowns on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (switcherRef.current && !switcherRef.current.contains(e.target as Node)) setSwitcherOpen(false);
       if (profileRef.current && !profileRef.current.contains(e.target as Node)) setProfileOpen(false);
+      if (healthRef.current && !healthRef.current.contains(e.target as Node)) setHealthOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -72,6 +81,7 @@ export default function WorkspaceLayoutClient({ children }: { children: ReactNod
   const currentWorkspace = workspaces.find(w => w.id === workspaceId);
   const otherWorkspaces = workspaces.filter(w => w.id !== workspaceId);
   const basePath = `/w/${workspaceId}`;
+  const canCreateWorkspace = user.is_super_admin || ['owner', 'admin'].includes(currentWorkspace?.role || '');
 
   return (
     <div className="min-h-screen flex bg-gray-50">
@@ -138,10 +148,10 @@ export default function WorkspaceLayoutClient({ children }: { children: ReactNod
               )}
 
               {/* Create workspace */}
-              {user.is_super_admin && (
+              {canCreateWorkspace && (
                 <div className="px-3 py-2 border-t border-gray-100">
                   <Link
-                    href="/admin/workspaces"
+                    href={user.is_super_admin ? '/admin/workspaces' : '/'}
                     className="flex items-center justify-center gap-2 w-full px-3 py-2 text-sm text-brand-600 font-medium rounded-lg border border-brand-200 hover:bg-brand-50 transition-colors"
                     onClick={() => setSwitcherOpen(false)}
                   >
@@ -159,7 +169,7 @@ export default function WorkspaceLayoutClient({ children }: { children: ReactNod
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {navItems.map(item => {
-            const href = item.absolute ? item.href : `${basePath}${item.href}`;
+            const href = `${basePath}${item.href}`;
             const isActive = pathname.startsWith(href);
             return (
               <Link
@@ -179,23 +189,128 @@ export default function WorkspaceLayoutClient({ children }: { children: ReactNod
           })}
         </nav>
 
-        {/* Sidebar bottom: user — sticky */}
-        <div className="border-t border-gray-200 p-3 shrink-0 bg-white">
-          <div className="flex items-center gap-2">
-            {user.avatar_url ? (
-              <img src={user.avatar_url} alt="" className="w-7 h-7 rounded-full" />
+        {/* Sidebar branding */}
+        <div className="px-4 py-2 text-left shrink-0">
+          <p className="text-[12px] md:text-[14px] text-gray-400 leading-relaxed">
+            Made with <span className="text-red-400">&#10084;</span> CAL Digital Team
+          </p>
+
+                 </div>
+
+        {/* System Status Bar — sticky at bottom, replaces old profile bar */}
+        <div className="sticky bottom-0 border-t border-gray-200 p-3 shrink-0 bg-white z-10" ref={healthRef}>
+          <button
+            onClick={async () => {
+              setHealthOpen(prev => !prev);
+              if (!healthData) {
+                setHealthLoading(true);
+                try {
+                  const data = await import('@/lib/api').then(m => m.api.health.check());
+                  setHealthData(data);
+                } catch {
+                  setHealthData({ status: 'error', checks: {}, timestamp: new Date().toISOString() });
+                } finally {
+                  setHealthLoading(false);
+                }
+              }
+            }}
+            className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-gray-50 transition-colors text-left cursor-pointer"
+          >
+            {healthData ? (
+              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${healthData.status === 'operational' ? 'bg-emerald-500' : healthData.status === 'degraded' ? 'bg-amber-400' : 'bg-red-500'}`} />
             ) : (
-              <div className="w-7 h-7 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 text-xs font-medium">
-                {user.name[0]}
-              </div>
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
             )}
-            <span className="text-xs text-gray-600 truncate flex-1">{user.name}</span>
-            <button onClick={logout} className="text-gray-400 hover:text-gray-600 p-1" title="Sign out">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
-              </svg>
-            </button>
-          </div>
+            <span className="text-xs font-medium text-gray-600 flex-1">System Status</span>
+            <svg className={`w-3.5 h-3.5 text-gray-400 transition-transform ${healthOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {/* Drop-up panel */}
+          {healthOpen && (
+            <div className="absolute bottom-full left-3 right-3 mb-2 bg-white border border-gray-200 rounded-xl shadow-xl z-50 animate-in overflow-hidden">
+              {/* Header */}
+              <div className="px-4 pt-3 pb-2 border-b border-gray-100 flex items-center justify-between">
+                <p className="text-sm font-semibold text-gray-800">System Health</p>
+                {healthData && (
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      setHealthLoading(true);
+                      try {
+                        const data = await import('@/lib/api').then(m => m.api.health.check());
+                        setHealthData(data);
+                      } catch {
+                        setHealthData({ status: 'error', checks: {}, timestamp: new Date().toISOString() });
+                      } finally {
+                        setHealthLoading(false);
+                      }
+                    }}
+                    className="text-[11px] text-brand-600 hover:text-brand-800 cursor-pointer font-medium"
+                  >
+                    Refresh
+                  </button>
+                )}
+              </div>
+
+              {healthLoading && (
+                <div className="px-4 py-4 space-y-2.5 animate-pulse">
+                  {[1, 2, 3].map(i => (
+                    <div key={i} className="flex items-center gap-2.5">
+                      <div className="w-2 h-2 rounded-full bg-gray-200 shrink-0" />
+                      <div className="h-3 bg-gray-100 rounded flex-1" />
+                      <div className="h-3 bg-gray-100 rounded w-14" />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {!healthLoading && healthData && (
+                <>
+                  {/* Overall status */}
+                  <div className={`mx-3 my-2.5 flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium ${
+                    healthData.status === 'operational' ? 'bg-emerald-50 text-emerald-700' :
+                    healthData.status === 'degraded' ? 'bg-amber-50 text-amber-700' :
+                    'bg-red-50 text-red-700'
+                  }`}>
+                    <span className={`w-2 h-2 rounded-full ${healthData.status === 'operational' ? 'bg-emerald-500' : healthData.status === 'degraded' ? 'bg-amber-400' : 'bg-red-500'}`} />
+                    {healthData.status === 'operational' ? 'All systems operational' :
+                     healthData.status === 'degraded' ? 'Some systems degraded' : 'System error'}
+                  </div>
+
+                  {/* Individual checks */}
+                  <div className="px-3 pb-3 space-y-1">
+                    {Object.entries(healthData.checks).map(([name, check]) => (
+                      <div key={name} className="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-gray-50 gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${check.ok ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium text-gray-700 capitalize">{name}</p>
+                            {check.detail && (
+                              <p className="text-[10px] text-gray-400">{check.detail}</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className={`text-[11px] font-medium ${check.ok ? 'text-emerald-600' : 'text-red-500'}`}>
+                            {check.ok ? '● OK' : '● Down'}
+                          </span>
+                          {check.latencyMs > 0 && (
+                            <p className="text-[10px] text-gray-400">{check.latencyMs}ms</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="border-t border-gray-100 px-4 py-2">
+                    <p className="text-[10px] text-gray-400">Checked {new Date(healthData.timestamp).toLocaleTimeString()}</p>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </aside>
 
@@ -218,6 +333,10 @@ export default function WorkspaceLayoutClient({ children }: { children: ReactNod
 
           {/* Spacer */}
           <div className="flex-1" />
+
+          <Link href="/docs" className="mr-3 text-sm font-medium text-gray-600 hover:text-brand-700 hidden sm:inline">
+            Docs
+          </Link>
 
           {/* Top-right: profile menu (ClickUp-style) */}
           <div className="relative" ref={profileRef}>

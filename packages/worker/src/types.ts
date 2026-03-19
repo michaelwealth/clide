@@ -27,7 +27,8 @@ export interface Env {
   AT_API_KEY?: string;
   AT_USERNAME?: string;
 
-
+  // Cloudflare Turnstile secret (production only — not set in local dev)
+  TURNSTILE_SECRET_KEY?: string;
 }
 
 // ── Roles ──
@@ -55,7 +56,7 @@ export const VALID_TRANSITIONS: Record<CampaignStatus, CampaignStatus[]> = {
 export type SmsStatus = 'pending' | 'queued' | 'sent' | 'delivered' | 'failed';
 
 // ── Trigger Types ──
-export type TriggerType = 'click' | 'no_click';
+export type TriggerType = 'click' | 'no_click' | 'click_delay';
 export type TriggerLogStatus = 'pending' | 'scheduled' | 'fired' | 'skipped' | 'failed';
 
 // ── DB Row Types ──
@@ -93,6 +94,7 @@ export interface CampaignRow {
   campaign_key: string;
   base_url: string;
   fallback_url: string;
+  disable_shortlink_generation: number;
   sms_template: string | null;
   status: CampaignStatus;
   start_at: string | null;

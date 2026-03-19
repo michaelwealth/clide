@@ -81,12 +81,19 @@ export async function processCsvUpload(
     return;
   }
 
-  // Get existing slugs for collision detection
-  const existingSlugsResult = await env.DB.prepare(
-    'SELECT slug FROM links WHERE campaign_id = ?'
-  ).bind(campaignId).all<{ slug: string }>();
+  let generateShortlinks = campaign.disable_shortlink_generation !== 1;
 
-  const existingSlugs = new Set(existingSlugsResult.results.map(r => r.slug));
+  // Get existing slugs for collision detection
+  const existingSlugs = new Set<string>();
+  if (generateShortlinks) {
+    const existingSlugsResult = await env.DB.prepare(
+      'SELECT slug FROM links WHERE campaign_id = ?'
+    ).bind(campaignId).all<{ slug: string }>();
+
+    for (const row of existingSlugsResult.results) {
+      existingSlugs.add(row.slug);
+    }
+  }
 
   // Existing contacts + links by phone for dedup/replace behavior.
   const existingContactsResult = await env.DB.prepare(`
@@ -111,6 +118,18 @@ export async function processCsvUpload(
 
   // Process in batches
   for (let i = 1; i < lines.length; i += BATCH_SIZE) {
+    // Re-check campaign status during long-running uploads to avoid races with Kill.
+    const latestCampaign = await env.DB.prepare(
+      'SELECT status, disable_shortlink_generation FROM campaigns WHERE id = ? AND workspace_id = ?'
+    ).bind(campaignId, workspaceId).first<{ status: string; disable_shortlink_generation: number }>();
+
+    if (!latestCampaign || latestCampaign.status === 'expired') {
+      await markUploadFailed(env, uploadId, 'Campaign was killed/expired while processing upload');
+      return;
+    }
+
+    generateShortlinks = latestCampaign.disable_shortlink_generation !== 1;
+
     const batch = lines.slice(i, i + BATCH_SIZE);
     const dbStatements: D1PreparedStatement[] = [];
     const kvWrites: Array<{ key: string; slug: string; contactId: string; linkId: string }> = [];
@@ -161,16 +180,16 @@ export async function processCsvUpload(
         }
 
         let contactId = generateId();
-        let linkId = generateId();
-        let slug = await generateUniqueSlug(firstname, existingSlugs);
+        let linkId: string | null = generateShortlinks ? generateId() : null;
+        let slug: string | null = generateShortlinks ? await generateUniqueSlug(firstname, existingSlugs) : null;
 
         if (existing) {
           contactId = existing.contactId;
-          if (existing.linkId && existing.slug) {
+          if (generateShortlinks && existing.linkId && existing.slug) {
             linkId = existing.linkId;
             slug = existing.slug;
           }
-        } else {
+        } else if (generateShortlinks && slug) {
           existingSlugs.add(slug);
         }
 
@@ -184,7 +203,7 @@ export async function processCsvUpload(
         const destinationUrl = interpolateTemplate(campaign.base_url, urlVariables);
 
         if (existing) {
-          // Replace mode: update existing contact and existing link destination.
+          // Replace mode: update existing contact and optionally existing link destination.
           dbStatements.push(
             env.DB.prepare(`
               UPDATE contacts
@@ -198,7 +217,7 @@ export async function processCsvUpload(
             )
           );
 
-          if (existing.linkId) {
+          if (generateShortlinks && existing.linkId) {
             dbStatements.push(
               env.DB.prepare(`
                 UPDATE links
@@ -206,7 +225,7 @@ export async function processCsvUpload(
                 WHERE id = ? AND campaign_id = ?
               `).bind(destinationUrl, existing.linkId, campaignId)
             );
-          } else {
+          } else if (generateShortlinks && linkId && slug) {
             dbStatements.push(
               env.DB.prepare(`
                 INSERT INTO links (id, campaign_id, contact_id, slug, destination_url)
@@ -216,7 +235,7 @@ export async function processCsvUpload(
             existingByPhone.set(phone, { contactId, linkId, slug });
           }
         } else {
-          // New contact + link
+          // New contact and optionally new link
           dbStatements.push(
             env.DB.prepare(`
               INSERT INTO contacts (id, campaign_id, workspace_id, firstname, phone, extra_data)
@@ -227,21 +246,27 @@ export async function processCsvUpload(
             )
           );
 
-          dbStatements.push(
-            env.DB.prepare(`
-              INSERT INTO links (id, campaign_id, contact_id, slug, destination_url)
-              VALUES (?, ?, ?, ?, ?)
-            `).bind(linkId, campaignId, contactId, slug, destinationUrl)
-          );
-          existingByPhone.set(phone, { contactId, linkId, slug });
+          if (generateShortlinks && linkId && slug) {
+            dbStatements.push(
+              env.DB.prepare(`
+                INSERT INTO links (id, campaign_id, contact_id, slug, destination_url)
+                VALUES (?, ?, ?, ?, ?)
+              `).bind(linkId, campaignId, contactId, slug, destinationUrl)
+            );
+            existingByPhone.set(phone, { contactId, linkId, slug });
+          } else {
+            existingByPhone.set(phone, { contactId, linkId: null, slug: null });
+          }
         }
 
-        kvWrites.push({
-          key: `${campaign.campaign_key}/${slug}`,
-          slug,
-          contactId,
-          linkId,
-        });
+        if (generateShortlinks && slug && linkId) {
+          kvWrites.push({
+            key: `${campaign.campaign_key}/${slug}`,
+            slug,
+            contactId,
+            linkId,
+          });
+        }
 
         processed++;
       } catch (err) {

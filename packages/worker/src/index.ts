@@ -13,6 +13,7 @@ import { tenantMiddleware } from './middleware/tenant';
 
 // Routes
 import { auth } from './routes/auth';
+import { healthRouter } from './routes/health';
 import { workspaces } from './routes/workspaces';
 import { campaigns } from './routes/campaigns';
 import { contacts } from './routes/contacts';
@@ -52,6 +53,10 @@ app.onError((err, c) => {
 app.route('/api/auth', auth);
 app.route('/api/webhooks/sms', webhooks);
 
+// ── Authenticated Health Check ──
+app.use('/api/health', authMiddleware);
+app.route('/api/health', healthRouter);
+
 // ── Authenticated API Routes ──
 app.use('/api/workspaces/*', authMiddleware);
 app.use('/api/admin/*', authMiddleware, superAdminGuard);
@@ -81,9 +86,20 @@ app.get('/api/workspaces', async (c) => {
   return c.json({ workspaces: result.results });
 });
 
-// Create workspace (super admin)
-app.post('/api/workspaces', superAdminGuard, async (c) => {
+// Create workspace (super admin or workspace admin/owner)
+app.post('/api/workspaces', async (c) => {
   const user = c.get('user');
+
+  if (!user.is_super_admin) {
+    const elevatedMembership = await c.env.DB.prepare(
+      "SELECT id FROM workspace_members WHERE user_id = ? AND role IN ('owner', 'admin') LIMIT 1"
+    ).bind(user.id).first();
+
+    if (!elevatedMembership) {
+      return c.json({ error: 'Forbidden' }, 403);
+    }
+  }
+
   const body = await c.req.json<{ name: string; slug: string }>();
   if (!body.name?.trim() || !body.slug?.trim()) {
     return c.json({ error: 'Name and slug are required' }, 400);
@@ -128,7 +144,7 @@ app.route('/api/workspaces/:workspaceId/campaigns/:campaignId/analytics', analyt
 // Admin routes
 app.route('/api/admin', admin);
 
-// ── Health Check ──
+// ── Public Health Ping ──
 app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
 // ── Public Redirect (must be LAST to avoid catching API routes) ──

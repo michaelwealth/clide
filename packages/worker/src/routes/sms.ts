@@ -77,6 +77,13 @@ sms.post('/send', requireRole('admin'), async (c) => {
 
   const shortBase = c.env.SHORT_DOMAIN;
   const requiresLink = /\{link\}/.test(campaign.sms_template || '');
+
+  if (campaign.disable_shortlink_generation === 1 && requiresLink) {
+    return c.json({
+      error: 'This campaign has shortlink generation disabled. Remove {link} from the SMS template to send plain SMS.',
+    }, 400);
+  }
+
   let queued = 0;
   let skipped = 0;
   const queueMessages: SmsDispatchMessage[] = [];

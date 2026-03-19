@@ -1,9 +1,16 @@
 import { Hono } from 'hono';
 import type { Env, UserRow, KvSessionData } from '../types';
-import { setSession, deleteSession, getSession } from '../lib/kv';
+import { setSession, deleteSession, getSession, refreshSession } from '../lib/kv';
 import { generateId } from '../lib/id';
 
 const auth = new Hono<{ Bindings: Env }>();
+const SESSION_MAX_AGE = 7 * 24 * 60 * 60;
+
+function sanitizeReturnTo(input?: string | null): string {
+  if (!input || !input.startsWith('/')) return '/';
+  if (input.startsWith('//')) return '/';
+  return input;
+}
 
 /**
  * GET /api/auth/login
@@ -11,8 +18,9 @@ const auth = new Hono<{ Bindings: Env }>();
  */
 auth.get('/login', async (c) => {
   const state = generateId();
+  const returnTo = sanitizeReturnTo(c.req.query('return_to'));
   // Store state in KV for CSRF validation (10 minute TTL)
-  await c.env.KV.put(`oauth:state:${state}`, '1', { expirationTtl: 600 });
+  await c.env.KV.put(`oauth:state:${state}`, JSON.stringify({ return_to: returnTo }), { expirationTtl: 600 });
 
   const params = new URLSearchParams({
     client_id: c.env.GOOGLE_CLIENT_ID,
@@ -47,6 +55,7 @@ auth.get('/callback', async (c) => {
   if (!storedState) {
     return c.redirect(`${c.env.FRONTEND_URL}/login?error=invalid_state`);
   }
+  const parsedState = JSON.parse(storedState) as { return_to?: string };
   // Delete state to prevent replay
   await c.env.KV.delete(`oauth:state:${state}`);
 
@@ -124,14 +133,14 @@ auth.get('/callback', async (c) => {
     'Path=/',
     'HttpOnly',
     'SameSite=Lax',
-    `Max-Age=1800`,
+    `Max-Age=${SESSION_MAX_AGE}`,
     ...(isProduction ? ['Secure', 'Domain=.cmaf.cc'] : []),
   ].join('; ');
 
   return new Response(null, {
     status: 302,
     headers: {
-      Location: `${c.env.FRONTEND_URL}/w`,
+      Location: `${c.env.FRONTEND_URL}${sanitizeReturnTo(parsedState.return_to)}`,
       'Set-Cookie': cookieFlags,
     },
   });
@@ -174,6 +183,8 @@ auth.get('/me', async (c) => {
     return c.json({ error: 'Session expired' }, 401);
   }
 
+  await refreshSession(c.env.KV, match[1], session);
+
   // Get user's workspaces
   const workspaces = await c.env.DB.prepare(`
     SELECT w.*, wm.role
@@ -201,9 +212,33 @@ auth.get('/me', async (c) => {
  * Google OAuth is the primary auth method; password is a secondary option.
  */
 auth.post('/password-login', async (c) => {
-  const body = await c.req.json<{ email?: string; password?: string }>();
+  const body = await c.req.json<{
+    email?: string;
+    password?: string;
+    return_to?: string;
+    'cf-turnstile-response'?: string;
+  }>();
   if (!body.email || !body.password) {
     return c.json({ error: 'Email and password are required' }, 400);
+  }
+
+  // Verify Cloudflare Turnstile token (production only)
+  if (c.env.ENVIRONMENT !== 'development' && c.env.TURNSTILE_SECRET_KEY) {
+    const token = body['cf-turnstile-response'];
+    if (!token) {
+      return c.json({ error: 'Bot verification required' }, 400);
+    }
+    const form = new FormData();
+    form.append('secret', c.env.TURNSTILE_SECRET_KEY);
+    form.append('response', token);
+    const verifyRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      body: form,
+    });
+    const verifyData = await verifyRes.json() as { success: boolean };
+    if (!verifyData.success) {
+      return c.json({ error: 'Bot verification failed. Please reload and try again.' }, 400);
+    }
   }
 
   // Rate limit: max 5 attempts per email per 5 minutes
@@ -263,7 +298,7 @@ auth.post('/password-login', async (c) => {
     'Path=/',
     'HttpOnly',
     'SameSite=Lax',
-    `Max-Age=1800`,
+    `Max-Age=${SESSION_MAX_AGE}`,
     ...(isProduction ? ['Secure', 'Domain=.cmaf.cc'] : []),
   ].join('; ');
 
@@ -286,6 +321,7 @@ auth.post('/password-login', async (c) => {
       is_super_admin: user.is_super_admin === 1,
     },
     workspaces: workspaces.results,
+    return_to: sanitizeReturnTo(body.return_to),
   });
 });
 
