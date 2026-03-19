@@ -1,4 +1,13 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8787';
+const API_URL = (() => {
+  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (host === 'app.cmaf.cc' || /^[a-z0-9-]+\.cmaf\.cc$/.test(host)) {
+      return 'https://api.cmaf.cc';
+    }
+  }
+  return 'http://localhost:8787';
+})();
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -72,7 +81,7 @@ export const api = {
     create: (data: { name: string; slug: string }) =>
       request<{ workspace: any }>('/api/workspaces', { method: 'POST', body: JSON.stringify(data) }),
     get: (wid: string) => request<{ workspace: any }>(`/api/workspaces/${wid}/details`),
-    update: (wid: string, data: { name: string }) =>
+    update: (wid: string, data: { name?: string; custom_domain?: string | null }) =>
       request(`/api/workspaces/${wid}`, { method: 'PUT', body: JSON.stringify(data) }),
     members: {
       list: (wid: string) => request<{ members: any[] }>(`/api/workspaces/${wid}/members`),
@@ -88,6 +97,11 @@ export const api = {
       update: (wid: string, data: any) =>
         request(`/api/workspaces/${wid}/sms-config`, { method: 'PUT', body: JSON.stringify(data) }),
     },
+    generateDomain: (wid: string, subdomain: string) =>
+      request<{ ok: boolean; domain: string }>(`/api/workspaces/${wid}/domain/generate`, {
+        method: 'POST',
+        body: JSON.stringify({ subdomain }),
+      }),
   },
 
   // ── Campaigns ──

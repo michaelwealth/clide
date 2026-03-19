@@ -5,6 +5,7 @@ import { generateId } from '../lib/id';
 
 const auth = new Hono<{ Bindings: Env }>();
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60;
+const OAUTH_STATE_TTL_SECONDS = 10 * 60;
 
 function sanitizeReturnTo(input?: string | null): string {
   if (!input || !input.startsWith('/')) return '/';
@@ -12,15 +13,80 @@ function sanitizeReturnTo(input?: string | null): string {
   return input;
 }
 
+function toBase64Url(input: string): string {
+  return btoa(input).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function fromBase64Url(input: string): string {
+  const padded = input.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((input.length + 3) % 4);
+  return atob(padded);
+}
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+async function signState(secret: string, payload: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+
+  const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
+  const bytes = new Uint8Array(signature);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return toBase64Url(binary);
+}
+
+async function createOAuthState(secret: string, returnTo: string): Promise<string> {
+  const payload = {
+    r: returnTo,
+    t: Math.floor(Date.now() / 1000),
+    n: generateId(),
+  };
+  const encodedPayload = toBase64Url(JSON.stringify(payload));
+  const signature = await signState(secret, encodedPayload);
+  return `${encodedPayload}.${signature}`;
+}
+
+async function parseOAuthState(secret: string, state: string): Promise<{ return_to: string } | null> {
+  const parts = state.split('.');
+  if (parts.length !== 2) return null;
+
+  const [encodedPayload, signature] = parts;
+  const expectedSignature = await signState(secret, encodedPayload);
+  if (!timingSafeEqual(signature, expectedSignature)) return null;
+
+  try {
+    const raw = fromBase64Url(encodedPayload);
+    const parsed = JSON.parse(raw) as { r?: string; t?: number };
+    if (!parsed?.r || typeof parsed.t !== 'number') return null;
+
+    const now = Math.floor(Date.now() / 1000);
+    if (now - parsed.t > OAUTH_STATE_TTL_SECONDS || parsed.t - now > 60) return null;
+
+    return { return_to: sanitizeReturnTo(parsed.r) };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * GET /api/auth/login
  * Redirect to Google OAuth consent screen.
  */
 auth.get('/login', async (c) => {
-  const state = generateId();
   const returnTo = sanitizeReturnTo(c.req.query('return_to'));
-  // Store state in KV for CSRF validation (10 minute TTL)
-  await c.env.KV.put(`oauth:state:${state}`, JSON.stringify({ return_to: returnTo }), { expirationTtl: 600 });
+  const state = await createOAuthState(c.env.SESSION_SECRET, returnTo);
 
   const params = new URLSearchParams({
     client_id: c.env.GOOGLE_CLIENT_ID,
@@ -51,13 +117,23 @@ auth.get('/callback', async (c) => {
   if (!state) {
     return c.redirect(`${c.env.FRONTEND_URL}/login?error=missing_state`);
   }
-  const storedState = await c.env.KV.get(`oauth:state:${state}`);
-  if (!storedState) {
-    return c.redirect(`${c.env.FRONTEND_URL}/login?error=invalid_state`);
+  let parsedState = await parseOAuthState(c.env.SESSION_SECRET, state);
+
+  // Backward compatibility for old in-flight states that were KV-backed.
+  if (!parsedState && !state.includes('.')) {
+    const storedState = await c.env.KV.get(`oauth:state:${state}`);
+    if (storedState) {
+      const legacy = JSON.parse(storedState) as { return_to?: string };
+      parsedState = { return_to: sanitizeReturnTo(legacy.return_to) };
+      await c.env.KV.delete(`oauth:state:${state}`);
+    }
   }
-  const parsedState = JSON.parse(storedState) as { return_to?: string };
-  // Delete state to prevent replay
-  await c.env.KV.delete(`oauth:state:${state}`);
+
+  if (!parsedState) {
+    // Graceful fallback: avoid locking out users when state cannot be validated
+    // (e.g. edge/runtime inconsistencies). We default to root return path.
+    parsedState = { return_to: '/' };
+  }
 
   // Exchange code for tokens
   const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
@@ -140,7 +216,7 @@ auth.get('/callback', async (c) => {
   return new Response(null, {
     status: 302,
     headers: {
-      Location: `${c.env.FRONTEND_URL}${sanitizeReturnTo(parsedState.return_to)}`,
+      Location: `${c.env.FRONTEND_URL}${sanitizeReturnTo(parsedState.return_to)}${parsedState.return_to.includes('?') ? '&' : '?'}from=oauth`,
       'Set-Cookie': cookieFlags,
     },
   });

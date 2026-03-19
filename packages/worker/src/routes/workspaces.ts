@@ -31,19 +31,52 @@ workspaces.get('/details', async (c) => {
 
 /**
  * PUT /api/workspaces/:workspaceId
- * Update workspace name.
+ * Update workspace name and/or custom domain.
  */
 workspaces.put('/', requireRole('owner'), async (c) => {
   const { workspace } = c.get('workspace');
-  const body = await c.req.json<{ name: string }>();
+  const body = await c.req.json<{ name?: string; custom_domain?: string | null }>();
 
-  if (!body.name?.trim()) {
-    return c.json({ error: 'Name is required' }, 400);
+  const sets: string[] = [];
+  const params: unknown[] = [];
+
+  if (body.name !== undefined) {
+    if (!body.name.trim()) {
+      return c.json({ error: 'Name is required' }, 400);
+    }
+    sets.push('name = ?');
+    params.push(body.name.trim());
   }
 
-  await c.env.DB.prepare(`
-    UPDATE workspaces SET name = ?, updated_at = datetime('now') WHERE id = ?
-  `).bind(body.name.trim(), workspace.id).run();
+  if (body.custom_domain !== undefined) {
+    if (body.custom_domain === null || body.custom_domain === '') {
+      sets.push('custom_domain = NULL');
+    } else {
+      const domain = body.custom_domain.toLowerCase().trim();
+      // Validate domain format
+      if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(domain)) {
+        return c.json({ error: 'Invalid domain format' }, 400);
+      }
+      // Check uniqueness
+      const existing = await c.env.DB.prepare(
+        'SELECT id FROM workspaces WHERE custom_domain = ? AND id != ?'
+      ).bind(domain, workspace.id).first();
+      if (existing) {
+        return c.json({ error: 'Domain is already in use by another workspace' }, 409);
+      }
+      sets.push('custom_domain = ?');
+      params.push(domain);
+    }
+  }
+
+  if (sets.length === 0) {
+    return c.json({ error: 'Nothing to update' }, 400);
+  }
+
+  sets.push("updated_at = datetime('now')");
+  await c.env.DB.prepare(
+    `UPDATE workspaces SET ${sets.join(', ')} WHERE id = ?`
+  ).bind(...params, workspace.id).run();
 
   return c.json({ ok: true });
 });
@@ -304,6 +337,96 @@ workspaces.put('/sms-config', requireRole('owner'), async (c) => {
   }
 
   return c.json({ ok: true });
+});
+
+/**
+ * POST /api/workspaces/:workspaceId/domain/generate
+ * Create a cmaf.cc subdomain via Cloudflare DNS API and save it as custom_domain.
+ */
+workspaces.post('/domain/generate', requireRole('owner'), async (c) => {
+  const { workspace } = c.get('workspace');
+  const { subdomain } = await c.req.json<{ subdomain: string }>();
+
+  if (!subdomain || typeof subdomain !== 'string') {
+    return c.json({ error: 'Subdomain is required' }, 400);
+  }
+
+  const slug = subdomain.toLowerCase().trim();
+
+  // Validate subdomain: only lowercase alphanumeric + hyphens, 3-32 chars, no leading/trailing hyphen
+  if (!/^[a-z0-9]([a-z0-9-]{1,30}[a-z0-9])?$/.test(slug) || slug.length < 3) {
+    return c.json({ error: 'Subdomain must be 3-32 chars, alphanumeric and hyphens only, no leading/trailing hyphen' }, 400);
+  }
+
+  // Reserved subdomains
+  const reserved = ['api', 'app', 'www', 'mail', 'smtp', 'ftp', 'ns1', 'ns2', 'admin', 'dashboard', 'cdn', 's'];
+  if (reserved.includes(slug)) {
+    return c.json({ error: 'This subdomain is reserved' }, 400);
+  }
+
+  const domain = `${slug}.cmaf.cc`;
+
+  // Check uniqueness in our DB
+  const existing = await c.env.DB.prepare(
+    'SELECT id FROM workspaces WHERE custom_domain = ? AND id != ?'
+  ).bind(domain, workspace.id).first();
+  if (existing) {
+    return c.json({ error: 'This subdomain is already in use by another workspace' }, 409);
+  }
+
+  // Ensure Cloudflare credentials are configured
+  if (!c.env.CF_API_TOKEN || !c.env.CF_ZONE_ID) {
+    return c.json({ error: 'Cloudflare API credentials not configured. Contact administrator.' }, 500);
+  }
+
+  // Create CNAME record via Cloudflare API
+  let cfBody: { success: boolean; errors?: { code: number; message: string }[] };
+  try {
+    const cfRes = await fetch(
+      `https://api.cloudflare.com/client/v4/zones/${c.env.CF_ZONE_ID}/dns_records`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${c.env.CF_API_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: 'CNAME',
+          name: slug,
+          content: 'clide-worker.michaelwealth.workers.dev',
+          proxied: true,
+          comment: `CLiDE workspace: ${workspace.name} (${workspace.id})`,
+        }),
+      }
+    );
+    cfBody = await cfRes.json() as typeof cfBody;
+  } catch (err) {
+    return c.json({ error: 'Failed to reach Cloudflare API. Please try again.' }, 502);
+  }
+
+  if (!cfBody.success) {
+    const errMsg = cfBody.errors?.[0]?.message || 'Unknown Cloudflare error';
+    // 81057 = record already exists
+    if (cfBody.errors?.some((e: { code: number }) => e.code === 81057)) {
+      // Record exists — might be ours from a previous attempt; just save it
+    } else {
+      return c.json({ error: `DNS creation failed: ${errMsg}` }, 502);
+    }
+  }
+
+  // Save the domain to workspace (UNIQUE index on custom_domain handles race conditions)
+  try {
+    await c.env.DB.prepare(
+      "UPDATE workspaces SET custom_domain = ?, updated_at = datetime('now') WHERE id = ?"
+    ).bind(domain, workspace.id).run();
+  } catch (err: any) {
+    if (err?.message?.includes('UNIQUE constraint failed')) {
+      return c.json({ error: 'This subdomain was just claimed by another workspace' }, 409);
+    }
+    throw err;
+  }
+
+  return c.json({ ok: true, domain });
 });
 
 export { workspaces };

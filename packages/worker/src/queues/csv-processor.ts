@@ -194,12 +194,11 @@ export async function processCsvUpload(
         }
 
         // Interpolate URL parameters: {column_name} → contact's CSV value
-        const urlVariables: Record<string, string> = {
-          firstname,
-          phone,
-          ...rowMap, // all raw CSV columns available as {column_name}
-          ...extraData,
-        };
+        // URI-encode all values to prevent parameter injection in URLs
+        const urlVariables: Record<string, string> = {};
+        for (const [k, v] of Object.entries({ firstname, phone, ...rowMap, ...extraData })) {
+          urlVariables[k] = encodeURIComponent(v);
+        }
         const destinationUrl = interpolateTemplate(campaign.base_url, urlVariables);
 
         if (existing) {

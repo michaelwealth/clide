@@ -84,3 +84,5 @@ SUPER_ADMIN_EMAIL = "michael@commercium.africa"
 # GOOGLE_CLIENT_SECRET
 # SESSION_SECRET
 # WEBHOOK_SECRET
+# CF_API_TOKEN       — Cloudflare API token with DNS:Edit for cmaf.cc zone
+# CF_ZONE_ID         — Cloudflare zone ID for cmaf.cc

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, type ReactNode } from 'react';
 import { useParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { InfoTip, GuideBox } from '@/components/info-tip';
+import { useAuth } from '@/lib/auth';
 
 interface ShortLink {
   id: string;
@@ -27,6 +28,9 @@ function formatDateTimeParts(value: string) {
 
 export default function LinksContent() {
   const { workspaceId } = useParams() as { workspaceId: string };
+  const { workspaces } = useAuth();
+  const currentWorkspace = workspaces.find((w: any) => w.id === workspaceId);
+  const shortDomain = currentWorkspace?.custom_domain || 's.cmaf.cc';
   const [links, setLinks] = useState<ShortLink[]>([]);
   const [loading, setLoading] = useState(true);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0 });
@@ -133,7 +137,7 @@ export default function LinksContent() {
 
   const copyShortUrl = async (slug: string) => {
     try {
-      await navigator.clipboard.writeText(`https://s.cmaf.cc/${slug}`);
+      await navigator.clipboard.writeText(`https://${shortDomain}/${slug}`);
     } catch {
       setError('Failed to copy link');
     }
@@ -141,7 +145,7 @@ export default function LinksContent() {
 
   const downloadQr = async (slug: string) => {
     try {
-      const shortUrl = `https://s.cmaf.cc/${slug}`;
+      const shortUrl = `https://${shortDomain}/${slug}`;
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=600x600&data=${encodeURIComponent(shortUrl)}`;
 
       const img = new Image();
@@ -241,7 +245,7 @@ export default function LinksContent() {
               <div>
                 <label className="label text-xs">
                   Custom Slug (optional)
-                  <InfoTip text="A custom slug like 'my-link' creates s.cmaf.cc/my-link. Leave empty for an auto-generated slug." />
+                  <InfoTip text={`A custom slug like 'my-link' creates ${shortDomain}/my-link. Leave empty for an auto-generated slug.`} />
                 </label>
                 <input
                   type="text"
@@ -287,18 +291,35 @@ export default function LinksContent() {
         </div>
       )}
 
-      {/* Links Grid */}
+      {/* Links Table */}
       {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-4 gap-4">
-          {[...Array(8)].map((_, i) => (
-            <div key={i} className="card p-4 animate-pulse">
-              <div className="h-3 w-20 bg-gray-200 rounded mb-2" />
-              <div className="h-4 w-40 bg-gray-100 rounded mb-3" />
-              <div className="h-3 w-full bg-gray-100 rounded mb-1" />
-              <div className="h-3 w-2/3 bg-gray-100 rounded mb-3" />
-              <div className="h-3 w-24 bg-gray-100 rounded" />
-            </div>
-          ))}
+        <div className="card overflow-hidden">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50/50">
+                <th className="text-left text-xs font-medium text-gray-500 px-4 py-3">Short Link</th>
+                <th className="text-left text-xs font-medium text-gray-500 px-4 py-3">Destination</th>
+                <th className="text-left text-xs font-medium text-gray-500 px-4 py-3 hidden md:table-cell">Name</th>
+                <th className="text-center text-xs font-medium text-gray-500 px-4 py-3 w-20">Clicks</th>
+                <th className="text-center text-xs font-medium text-gray-500 px-4 py-3 w-24">Status</th>
+                <th className="text-left text-xs font-medium text-gray-500 px-4 py-3 hidden lg:table-cell w-36">Created</th>
+                <th className="text-right text-xs font-medium text-gray-500 px-4 py-3 w-32">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...Array(6)].map((_, i) => (
+                <tr key={i} className="border-b border-gray-50 animate-pulse">
+                  <td className="px-4 py-3"><div className="h-4 w-28 bg-gray-200 rounded" /></td>
+                  <td className="px-4 py-3"><div className="h-4 w-48 bg-gray-100 rounded" /></td>
+                  <td className="px-4 py-3 hidden md:table-cell"><div className="h-4 w-24 bg-gray-100 rounded" /></td>
+                  <td className="px-4 py-3"><div className="h-4 w-10 bg-gray-100 rounded mx-auto" /></td>
+                  <td className="px-4 py-3"><div className="h-5 w-14 bg-gray-100 rounded mx-auto" /></td>
+                  <td className="px-4 py-3 hidden lg:table-cell"><div className="h-4 w-24 bg-gray-100 rounded" /></td>
+                  <td className="px-4 py-3"><div className="h-4 w-20 bg-gray-100 rounded ml-auto" /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       ) : links.length === 0 ? (
         <div className="text-center py-12">
@@ -311,66 +332,87 @@ export default function LinksContent() {
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-4 gap-4">
-          {links.map(link => {
-            const created = formatDateTimeParts(link.created_at);
-            return (
-              <div key={link.id} className="card p-4 hover:border-brand-200 hover:shadow-md transition-all">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="text-[11px] text-gray-400 leading-tight">
-                    <p>{created.date}</p>
-                    <p>{created.time}</p>
-                  </div>
-                  <button
-                    onClick={() => handleToggle(link)}
-                    className={`badge text-xs ${link.is_active ? 'badge-success' : 'badge-secondary'}`}
-                  >
-                    {link.is_active ? 'Active' : 'Inactive'}
-                  </button>
-                </div>
-
-                <button
-                  onClick={() => openLinkActions(link)}
-                  className="font-mono text-brand-600 font-medium hover:underline text-sm truncate w-full text-left"
-                >
-                  s.cmaf.cc/{link.slug}
-                </button>
-
-                {link.title && <p className="text-xs text-gray-500 mt-1 truncate">{link.title}</p>}
-
-                <p className="text-xs text-gray-400 mt-2 break-all min-h-[38px]">{link.destination_url}</p>
-
-                <div className="mt-3 text-[11px] text-gray-500 space-y-1">
-                  <p>Clicks: <span className="font-medium tabular-nums">{link.clicks.toLocaleString()}</span></p>
-                  <p>Last edited: {new Date(link.updated_at).toLocaleString()}</p>
-                </div>
-
-                <div className="mt-3 flex items-center justify-end gap-3">
-                  <IconAction label="QR" onClick={() => { setSelectedLink(link); setShowQrModal(true); }}>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2m2 0h2m-6 3h6m-6 3h2m2 0h2" />
-                    </svg>
-                  </IconAction>
-                  <IconAction
-                    label="Edit"
-                    onClick={() => {
-                      setSelectedLink(link);
-                      setShowEditModal(true);
-                    }}
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487a2.1 2.1 0 113.03 2.898L9.7 18.017l-4.2 1.05 1.05-4.2L16.862 4.487z" />
-                    </svg>
-                  </IconAction>
-                  <IconAction label="Delete" onClick={() => { setSelectedLink(link); setShowDeleteModal(true); }} danger>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 7h12M9 7V5h6v2m-7 4v6m4-6v6m4-6v6M5 7l1 12h12l1-12" />
-                    </svg>
-                  </IconAction>
-                </div>
-              </div>
-            );
-          })}
+        <div className="card overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50/50">
+                  <th className="text-left text-xs font-medium text-gray-500 px-4 py-3">Short Link</th>
+                  <th className="text-left text-xs font-medium text-gray-500 px-4 py-3">Destination</th>
+                  <th className="text-left text-xs font-medium text-gray-500 px-4 py-3 hidden md:table-cell">Name</th>
+                  <th className="text-center text-xs font-medium text-gray-500 px-4 py-3 w-20">Clicks</th>
+                  <th className="text-center text-xs font-medium text-gray-500 px-4 py-3 w-24">Status</th>
+                  <th className="text-left text-xs font-medium text-gray-500 px-4 py-3 hidden lg:table-cell w-36">Created</th>
+                  <th className="text-right text-xs font-medium text-gray-500 px-4 py-3 w-32">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {links.map(link => {
+                  const created = formatDateTimeParts(link.created_at);
+                  return (
+                    <tr key={link.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => openLinkActions(link)}
+                          className="font-mono text-brand-600 font-medium hover:underline text-sm"
+                        >
+                          {shortDomain}/{link.slug}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="text-xs text-gray-600 truncate max-w-[260px]">{link.destination_url}</p>
+                      </td>
+                      <td className="px-4 py-3 hidden md:table-cell">
+                        <p className="text-xs text-gray-500 truncate max-w-[160px]">{link.title || '—'}</p>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="text-sm font-medium tabular-nums text-gray-700">{link.clicks.toLocaleString()}</span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => handleToggle(link)}
+                          className={`badge text-xs ${link.is_active ? 'badge-success' : 'badge-secondary'}`}
+                        >
+                          {link.is_active ? 'Active' : 'Inactive'}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 hidden lg:table-cell">
+                        <div className="text-xs text-gray-400 leading-tight">
+                          <p>{created.date}</p>
+                          <p>{created.time}</p>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end gap-3">
+                          <IconAction label="QR" onClick={() => { setSelectedLink(link); setShowQrModal(true); }}>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2m2 0h2m-6 3h6m-6 3h2m2 0h2" />
+                            </svg>
+                          </IconAction>
+                          <IconAction
+                            label="Edit"
+                            onClick={() => {
+                              setSelectedLink(link);
+                              setShowEditModal(true);
+                            }}
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487a2.1 2.1 0 113.03 2.898L9.7 18.017l-4.2 1.05 1.05-4.2L16.862 4.487z" />
+                            </svg>
+                          </IconAction>
+                          <IconAction label="Delete" onClick={() => { setSelectedLink(link); setShowDeleteModal(true); }} danger>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.8}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 7h12M9 7V5h6v2m-7 4v6m4-6v6m4-6v6M5 7l1 12h12l1-12" />
+                            </svg>
+                          </IconAction>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -400,10 +442,10 @@ export default function LinksContent() {
       {showLinkModal && selectedLink && (
         <ActionModal title="Short Link Actions" onClose={() => setShowLinkModal(false)}>
           <p className="text-xs text-gray-500 mb-2">Selected short link</p>
-          <p className="font-mono text-sm text-brand-700 break-all mb-4">https://s.cmaf.cc/{selectedLink.slug}</p>
+          <p className="font-mono text-sm text-brand-700 break-all mb-4">https://{shortDomain}/{selectedLink.slug}</p>
           <div className="grid grid-cols-1 gap-2">
             <a
-              href={`https://s.cmaf.cc/${selectedLink.slug}`}
+              href={`https://${shortDomain}/${selectedLink.slug}`}
               target="_blank"
               rel="noopener noreferrer"
               className="btn-secondary text-sm"
@@ -432,6 +474,7 @@ export default function LinksContent() {
       {showEditModal && selectedLink && (
         <EditLinkModal
           link={selectedLink}
+          shortDomain={shortDomain}
           onClose={() => setShowEditModal(false)}
           onSaved={async () => {
             setShowEditModal(false);
@@ -446,6 +489,7 @@ export default function LinksContent() {
       {showQrModal && selectedLink && (
         <QrModal
           slug={selectedLink.slug}
+          shortDomain={shortDomain}
           destinationUrl={selectedLink.destination_url}
           onClose={() => setShowQrModal(false)}
           onDownload={() => downloadQr(selectedLink.slug)}
@@ -455,6 +499,7 @@ export default function LinksContent() {
       {showDeleteModal && selectedLink && (
         <DeleteConfirmModal
           linkSlug={selectedLink.slug}
+          shortDomain={shortDomain}
           onClose={() => { setShowDeleteModal(false); setSelectedLink(null); }}
           onConfirm={() => handleDelete(selectedLink.id)}
         />
@@ -476,11 +521,13 @@ function ActionModal({ title, onClose, children }: { title: string; onClose: () 
 
 function EditLinkModal({
   link,
+  shortDomain,
   onClose,
   onSaved,
   onSave,
 }: {
   link: ShortLink;
+  shortDomain: string;
   onClose: () => void;
   onSaved: () => Promise<void>;
   onSave: (payload: { destination_url: string; title?: string; is_active: boolean }) => Promise<void>;
@@ -510,7 +557,7 @@ function EditLinkModal({
       <div className="space-y-3">
         <div>
           <label className="label text-xs">Short URL</label>
-          <p className="text-xs font-mono text-brand-700">https://s.cmaf.cc/{link.slug}</p>
+          <p className="text-xs font-mono text-brand-700">https://{shortDomain}/{link.slug}</p>
         </div>
         <div>
           <label className="label text-xs">Destination URL</label>
@@ -558,16 +605,18 @@ function IconAction({
 
 function QrModal({
   slug,
+  shortDomain,
   destinationUrl,
   onClose,
   onDownload,
 }: {
   slug: string;
+  shortDomain: string;
   destinationUrl: string;
   onClose: () => void;
   onDownload: () => void;
 }) {
-  const shortUrl = `https://s.cmaf.cc/${slug}`;
+  const shortUrl = `https://${shortDomain}/${slug}`;
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(shortUrl)}`;
 
   return (
@@ -589,10 +638,12 @@ function QrModal({
 
 function DeleteConfirmModal({
   linkSlug,
+  shortDomain,
   onClose,
   onConfirm,
 }: {
   linkSlug: string;
+  shortDomain: string;
   onClose: () => void;
   onConfirm: () => void;
 }) {
@@ -610,7 +661,7 @@ function DeleteConfirmModal({
       <p className="text-sm text-gray-600 mb-2">
         You are about to permanently delete the short link:
       </p>
-      <p className="font-mono text-sm text-red-600 mb-4">https://s.cmaf.cc/{linkSlug}</p>
+      <p className="font-mono text-sm text-red-600 mb-4">https://{shortDomain}/{linkSlug}</p>
       <p className="text-sm text-gray-600 mb-3">
         Type <span className="font-bold text-red-600">delete</span> below to confirm:
       </p>

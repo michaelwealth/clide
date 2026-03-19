@@ -16,6 +16,7 @@ interface Workspace {
   name: string;
   slug: string;
   role: string;
+  custom_domain: string | null;
 }
 
 interface AuthState {
@@ -52,6 +53,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         error: null,
       });
     } catch {
+      // After OAuth callback, KV session may not have propagated yet. Retry once.
+      const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+      if (params?.get('from') === 'oauth') {
+        params.delete('from');
+        const cleanUrl = `${window.location.pathname}${params.toString() ? '?' + params.toString() : ''}`;
+        window.history.replaceState({}, '', cleanUrl);
+        await new Promise(r => setTimeout(r, 1500));
+        try {
+          const data = await api.auth.me();
+          setState({
+            user: data.user,
+            workspaces: data.workspaces,
+            loading: false,
+            error: null,
+          });
+          return;
+        } catch { /* fall through to unauthenticated state */ }
+      }
       setState({ user: null, workspaces: [], loading: false, error: null });
     }
   };

@@ -29,6 +29,10 @@ export interface Env {
 
   // Cloudflare Turnstile secret (production only — not set in local dev)
   TURNSTILE_SECRET_KEY?: string;
+
+  // Cloudflare API for dynamic subdomain creation
+  CF_API_TOKEN?: string;
+  CF_ZONE_ID?: string;
 }
 
 // ── Roles ──

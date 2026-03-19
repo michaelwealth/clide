@@ -15,7 +15,12 @@ export default function SettingsContent() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [editName, setEditName] = useState('');
+  const [editDomain, setEditDomain] = useState('');
   const [saving, setSaving] = useState(false);
+  const [savingDomain, setSavingDomain] = useState(false);
+  const [generatingSubdomain, setGeneratingSubdomain] = useState(false);
+  const [subdomainInput, setSubdomainInput] = useState('');
+  const [showSubdomainForm, setShowSubdomainForm] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [showRemoveModal, setShowRemoveModal] = useState(false);
   const [removingMember, setRemovingMember] = useState<any>(null);
@@ -29,6 +34,7 @@ export default function SettingsContent() {
       ]);
       setWorkspace(wsData.workspace);
       setEditName(wsData.workspace.name);
+      setEditDomain(wsData.workspace.custom_domain || '');
       setMembers(membersData.members);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load');
@@ -52,6 +58,41 @@ export default function SettingsContent() {
       setError(err instanceof ApiError ? err.message : 'Failed to update');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const updateDomain = async () => {
+    setSavingDomain(true);
+    setError('');
+    try {
+      await api.workspaces.update(workspaceId, {
+        custom_domain: editDomain.trim() || null,
+      });
+      setSuccess('Short link domain updated');
+      await load();
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to update domain');
+    } finally {
+      setSavingDomain(false);
+    }
+  };
+
+  const generateSubdomain = async () => {
+    if (!subdomainInput.trim()) return;
+    setGeneratingSubdomain(true);
+    setError('');
+    try {
+      const result = await api.workspaces.generateDomain(workspaceId, subdomainInput.trim());
+      setSuccess(`Subdomain created: ${result.domain}`);
+      setShowSubdomainForm(false);
+      setSubdomainInput('');
+      await load();
+      setTimeout(() => setSuccess(''), 5000);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to generate subdomain');
+    } finally {
+      setGeneratingSubdomain(false);
     }
   };
 
@@ -172,6 +213,92 @@ export default function SettingsContent() {
             <p className="text-sm text-gray-500">{workspace?.slug}</p>
           </div>
         </div>
+      </div>
+
+      {/* Custom Domain */}
+      <div className="card p-6 mb-6">
+        <h2 className="font-display text-lg font-semibold mb-1">
+          Short Link Domain
+          <InfoTip text="The domain used to generate short links for this workspace. You can use the default (s.cmaf.cc), generate a free cmaf.cc subdomain, or set your own custom domain." />
+        </h2>
+        <p className="text-xs text-gray-500 mb-4">
+          Custom domains must have a CNAME or A record pointing to the CLiDE worker in Cloudflare DNS.
+        </p>
+
+        {/* Current domain display */}
+        {workspace?.custom_domain && (
+          <div className="mb-4 p-3 bg-brand-50 rounded-lg border border-brand-200">
+            <p className="text-sm text-brand-800">
+              Active domain: <span className="font-mono font-semibold">{workspace.custom_domain}</span>
+            </p>
+          </div>
+        )}
+
+        {/* Manual domain entry */}
+        <div className="flex gap-2 mb-4">
+          <input
+            className="input flex-1"
+            value={editDomain}
+            onChange={e => setEditDomain(e.target.value)}
+            disabled={!canManage}
+            placeholder="e.g. links.yourbrand.com or brand.cmaf.cc"
+          />
+          {canManage && (
+            <button
+              onClick={updateDomain}
+              disabled={savingDomain || editDomain === (workspace?.custom_domain || '')}
+              className="btn-primary"
+            >
+              {savingDomain ? '…' : 'Save'}
+            </button>
+          )}
+        </div>
+
+        {/* Generate cmaf.cc subdomain */}
+        {canManage && (
+          <div className="border-t border-gray-100 pt-4">
+            <p className="text-sm text-gray-600 mb-2">
+              Or generate a free <span className="font-mono text-brand-700">.cmaf.cc</span> subdomain:
+            </p>
+            {!showSubdomainForm ? (
+              <button
+                onClick={() => setShowSubdomainForm(true)}
+                className="btn-secondary text-sm"
+              >
+                Generate cmaf.cc subdomain
+              </button>
+            ) : (
+              <div className="flex gap-2 items-center">
+                <div className="flex items-center flex-1 gap-0">
+                  <input
+                    className="input rounded-r-none flex-1"
+                    value={subdomainInput}
+                    onChange={e => setSubdomainInput(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                    placeholder="your-brand"
+                    maxLength={32}
+                    autoFocus
+                  />
+                  <span className="px-3 py-2 bg-gray-100 border border-l-0 border-gray-300 rounded-r-lg text-sm text-gray-500 font-mono">
+                    .cmaf.cc
+                  </span>
+                </div>
+                <button
+                  onClick={generateSubdomain}
+                  disabled={generatingSubdomain || !subdomainInput.trim()}
+                  className="btn-primary text-sm whitespace-nowrap"
+                >
+                  {generatingSubdomain ? 'Creating…' : 'Create'}
+                </button>
+                <button
+                  onClick={() => { setShowSubdomainForm(false); setSubdomainInput(''); }}
+                  className="text-gray-400 hover:text-gray-600 text-sm"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Members */}

@@ -2,3 +2,7 @@ name = "clide"
 compatibility_date = "2024-10-22"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = ".vercel/output/static"
+
+[vars]
+NEXT_PUBLIC_API_URL = "https://api.cmaf.cc"
+NODE_VERSION = "22"
